@@ -94,8 +94,3 @@ def extract_table_data(base_url, target):
             print(f"Error during table extraction: {e}")
             browser.close()
             return None
-
-
-def print_to_file(extracted_data, target):
-    with open(f"epitope_output{target}.json", "w") as f:
-        f.write(extracted_data)
