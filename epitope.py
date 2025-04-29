@@ -4,15 +4,15 @@ import pandas as pd
 import json, time
 import re
 
-base_url = "https://www.epregistry.com.br/databases/ABC"
 
-
-def extract_table_data(main_url, output_format="csv"):
+def extract_table_data(base_url, target):
 
     with sync_playwright() as p:
+        target_url = f"{base_url}{target}"
+        print(target_url)
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(main_url)
+        page.goto(target_url)
 
         try:
             # 1. Wait for the main table to load
@@ -66,6 +66,8 @@ def extract_table_data(main_url, output_format="csv"):
                                 print(
                                     "success - alleles extracted for ID:",
                                     row_data["ID"],
+                                    "database:",
+                                    target,
                                 )
                             else:
                                 row_data["Alleles"] = None
@@ -94,6 +96,6 @@ def extract_table_data(main_url, output_format="csv"):
             return None
 
 
-def print_to_file(extracted_data):
-    with open("epitope_output.json", "w") as f:
+def print_to_file(extracted_data, target):
+    with open(f"epitope_output{target}.json", "w") as f:
         f.write(extracted_data)
