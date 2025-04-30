@@ -11,8 +11,6 @@ def print_to_file(extracted_data, target):
 
     output_file_path = os.path.join(storage_path, f"epitope_output_{target}.json")
     with open(output_file_path, "w") as f:
-        for record in extracted_data:  # Iterate through the list
-            json.dump(record, f, ensure_ascii=False)  # Write each object
-            f.write('\n')  # Add newline delimiter
-
-
+        for record in extracted_data:
+            json.dump(record, f, ensure_ascii=False)
+            f.write("\n")

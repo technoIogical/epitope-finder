@@ -31,7 +31,7 @@ def extract_table_data(base_url, target):
                     row_data["Evidence"] = cells[3].inner_text().strip()
                     row_data["Exposition"] = cells[4].inner_text().strip()
                     row_data["Status"] = cells[5].inner_text().strip()
-                    row_data["Str. eplet"] = cells[6].inner_text().strip()
+                    row_data["Eplet Structure"] = cells[6].inner_text().strip()
                     row_data["Frequency"] = cells[7].inner_text().strip()
 
                 except IndexError:
