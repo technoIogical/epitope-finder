@@ -1,6 +1,5 @@
 from playwright.sync_api import sync_playwright
 from urllib.parse import urljoin
-import pandas as pd
 import json, time
 import re
 
