@@ -33,6 +33,10 @@ def extract_table_data(base_url, target):
                     row_data["Status"] = cells[5].inner_text().strip()
                     row_data["Eplet Structure"] = cells[6].inner_text().strip()
                     row_data["Frequency"] = cells[7].inner_text().strip()
+                    req_alleles_text = cells[8].inner_text().strip()
+                    row_data["Required Alleles"] = [
+                        req_allele.strip() for req_allele in req_alleles_text.split(",")
+                    ]
 
                 except IndexError:
                     print("skipping")
