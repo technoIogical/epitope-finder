@@ -19,7 +19,7 @@ def fetch_bq_epitopes(request):
     # Set CORS headers for the main request
     headers = {"Access-Control-Allow-Origin": "*"}
 
-    request_json = request.get_json(silent=true)
+    request_json = request.get_json(silent=True)
 
     if not request_json or "input_alleles" not in request_json:
         return ("Bad Request: `input_alleles` array is required.", 400, headers)
