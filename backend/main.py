@@ -29,7 +29,7 @@ def fetch_bq_epitopes(request):
 
     project_id = os.environ.get("EpitopeFinder", "epitopefinder-458404")
     dataset_id = "epitopefinder-458404.epitopes"
-    query_name = "output_logic"
+    query_name = "server_query"
 
     try:
         client = bigquery.Client(project=project_id)
@@ -37,16 +37,15 @@ def fetch_bq_epitopes(request):
         query_job_config = bigquery.QueryJobConfig(
             query=f"#bq:jobs:query:{project_id}.{dataset_id}.{query_name}",
             query_parameters=[
-                bigquery.ArrayQueryParameter(
-                    "patient_alleles", "STRING", patient_alleles
-                ),
+                bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
             ],
         )
 
         query_job = client.query(
-            f"SELECT * FROM `{project_id}.{dataset_id}.{query_name}`",
+            f"#bq:jobs:query:{project_id}.{dataset_id}.{query_name}",
             job_config=query_job_config,
         )
+
         rows = query_job.result()
 
         results = [dict(row) for row in rows]
@@ -56,5 +55,3 @@ def fetch_bq_epitopes(request):
     except Exception as e:
         print(f"An error occurred: {e}")
         return (f"An error occurred: {str(e)}", 500, headers)
-
-    return ("Hello World!", 200, headers)
