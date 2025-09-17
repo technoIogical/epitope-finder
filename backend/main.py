@@ -5,7 +5,9 @@ import os
 
 @functions_framework.http
 def fetch_bq_epitopes(request):
-
+    """
+    HTTP Cloud Function that runs a hard-coded BigQuery query.
+    """
     # Set CORS headers for the preflight request
     if request.method == "OPTIONS":
         headers = {
@@ -18,6 +20,13 @@ def fetch_bq_epitopes(request):
 
     # Set CORS headers for the main request
     headers = {"Access-Control-Allow-Origin": "*"}
+
+    request_json = request.get_json(silent=True)
+
+    if not request_json or "input_alleles" not in request_json:
+        return ("Bad Request: `input_alleles` array is required.", 400, headers)
+
+    input_alleles = request_json["input_alleles"]
 
     query = """
     WITH user_alleles AS (
@@ -64,7 +73,13 @@ def fetch_bq_epitopes(request):
     try:
         client = bigquery.Client(project=project_id)
 
-        query_job = client.query(query)
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
+            ],
+        )
+
+        query_job = client.query(query, job_config=job_config)
 
         rows = query_job.result()
 
