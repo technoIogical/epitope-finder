@@ -39,21 +39,17 @@ def fetch_bq_epitopes(request):
     try:
         client = bigquery.Client(project=project_id)
 
-        # 1. Get the saved query object
-        saved_query = client.get_saved_query(f"{project_id}.{dataset_id}.{query_name}")
-
-        # 2. Extract the query string from the saved query object
-        query_string = saved_query.query
-
-        # Configure the job with parameters
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
-            ],
+        # This is the correct way to reference a saved query by its full path
+        query_job = client.query(
+            f"#bq:jobs:query:{project_id}.{dataset_id}.{query_name}",
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter(
+                        "input_alleles", "STRING", input_alleles
+                    ),
+                ],
+            ),
         )
-
-        # The query is now the string content of the saved query
-        query_job = client.query(query_string, job_config=job_config)
 
         rows = query_job.result()
 
