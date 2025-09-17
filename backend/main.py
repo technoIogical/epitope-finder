@@ -5,9 +5,7 @@ import os
 
 @functions_framework.http
 def fetch_bq_epitopes(request):
-    """
-    HTTP Cloud Function that runs a hard-coded BigQuery query.
-    """
+
     # Set CORS headers for the preflight request
     if request.method == "OPTIONS":
         headers = {
@@ -23,7 +21,7 @@ def fetch_bq_epitopes(request):
 
     query = """
     WITH user_alleles AS (
-      SELECT allele FROM UNNEST(['A*01:01', 'B*08:01', 'C*01:02']) AS allele
+      SELECT allele FROM UNNEST(@input_alleles) AS allele
     ),
     
     matches AS (
