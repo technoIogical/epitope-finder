@@ -28,28 +28,58 @@ def fetch_bq_epitopes(request):
 
     input_alleles = request_json["input_alleles"]
 
-    # We will get the project_id from the environment variable, but for this
-    # specific use case, we hardcode to the user's project ID for simplicity
-    project_id = os.environ.get("EpitopeFinder", "epitopefinder-458404")
+    query = """
+    WITH user_alleles AS (
+      SELECT allele FROM UNNEST(@input_alleles) AS allele
+    ),
+    
+    matches AS (
+      SELECT
+        t.epitope_id AS `Epitope ID`,
+        t.epitope_name AS `Epitope Name`,
+        t.locus AS Locus,
+        ARRAY(
+          SELECT allele FROM UNNEST(t.alleles) AS allele
+          WHERE allele IN (SELECT allele FROM user_alleles)
+        ) AS `Positive Matches`,
+        ARRAY(
+          SELECT required_allele FROM UNNEST(t.required_alleles) AS required_allele
+          WHERE
+            required_allele IS NOT NULL AND
+            required_allele != '' AND
+            required_allele NOT IN (SELECT allele FROM user_alleles)
+        ) AS `Missing Required Alleles`
+      FROM
+        `epitopefinder-458404`.epitopes.HLA_data AS t
+    )
+    
+    SELECT
+      `Epitope ID`,
+      `Epitope Name`,
+      Locus,
+      `Positive Matches`,
+      CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
+      `Missing Required Alleles`,
+      CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`
+    FROM
+      matches
+    ORDER BY
+      `Number of Positive Matches` DESC,
+      `Number of Missing Required Alleles` ASC;
+    """
 
-    # The saved query and its containing dataset
-    dataset_id = "epitopes"
-    query_name = "server_query"
+    project_id = os.environ.get("EpitopeFinder", "epitopefinder-458404")
 
     try:
         client = bigquery.Client(project=project_id)
 
-        # This is the correct way to reference a saved query by its full path
-        query_job = client.query(
-            f"#bq:jobs:query:{project_id}.{dataset_id}.{query_name}",
-            job_config=bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ArrayQueryParameter(
-                        "input_alleles", "STRING", input_alleles
-                    ),
-                ],
-            ),
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
+            ],
         )
+
+        query_job = client.query(query, job_config=job_config)
 
         rows = query_job.result()
 
