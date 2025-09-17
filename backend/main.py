@@ -5,9 +5,7 @@ import os
 
 @functions_framework.http
 def fetch_bq_epitopes(request):
-    """
-    HTTP Cloud Function that runs a hard-coded BigQuery query.
-    """
+
     # Set CORS headers for the preflight request
     if request.method == "OPTIONS":
         headers = {
