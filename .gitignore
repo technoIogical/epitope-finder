@@ -2,3 +2,4 @@ extracted/*
 /__pycache__/*
 !extracted/.gitkeep
 .DS_Store
+main_manual.py
