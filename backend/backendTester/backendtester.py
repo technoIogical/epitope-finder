@@ -41,7 +41,7 @@ def save_results_to_json_file(results, filename):
 
 
 if __name__ == "__main__":
-    alleles_to_query = ["A*01:01", "B*08:01", "C*01:02"]
+    alleles_to_query = ["C01:02", "C01:03", "C02:02", "C02:10", "C05:01", "C06:02", "C07:01", "C07:02", "C07:04", "C08:01", "C08:02", "C08:03", "C08:04", "C12:02", "C12:03", "C14:02", "C14:03", "C15:02", "C15:05", "C16:01", "C16:02", "C18:01", "C*18:02"]
 
     epitope_data = run_cloud_function_query(alleles_to_query)
 
