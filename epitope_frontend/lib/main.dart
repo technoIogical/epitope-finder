@@ -48,8 +48,8 @@ class _AlleleFinderPageState extends State<AlleleFinderPage> {
       return;
     }
 
-    // Validate the input format (comma-separated alleles)
-    RegExp regExp = RegExp(r'^[A-Za-z0-9]+\*[\d]+:[\d]+(,[A-Za-z0-9]+\*[\d]+:[\d]+)*$');
+    // Validate the input format (comma-separated alleles with optional spaces after commas)
+    RegExp regExp = RegExp(r'^[A-Za-z0-9]+\*[\d]+:[\d]+(\s*,\s*[A-Za-z0-9]+\*[\d]+:[\d]+)*$');
     if (!regExp.hasMatch(inputAlleles)) {
       setState(() {
         errorMessage = 'Invalid format. Please use comma-separated alleles (e.g., C*01:02, B*08:01).';
@@ -63,7 +63,7 @@ class _AlleleFinderPageState extends State<AlleleFinderPage> {
       final response = await http.post(
         Uri.parse(apiUrl),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'input_alleles': inputAlleles.split(',')}),  // Split input alleles by comma
+        body: jsonEncode({'input_alleles': inputAlleles.split(',').map((allele) => allele.trim()).toList()}),  // Split input alleles by comma and trim spaces
       );
 
       if (response.statusCode == 200) {
