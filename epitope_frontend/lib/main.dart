@@ -10,82 +10,94 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Allele Finder',
+      title: 'Epitope Matcher',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        useMaterial3: true,
       ),
-      home: AlleleFinderPage(),
+      home: EpitopeMatrixPage(),
     );
   }
 }
 
-class AlleleFinderPage extends StatefulWidget {
+class EpitopeMatrixPage extends StatefulWidget {
   @override
-  _AlleleFinderPageState createState() => _AlleleFinderPageState();
+  _EpitopeMatrixPageState createState() => _EpitopeMatrixPageState();
 }
 
-class _AlleleFinderPageState extends State<AlleleFinderPage> {
+class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   final TextEditingController _controller = TextEditingController();
-  List<Map<String, dynamic>> data = [];
-  bool isLoading = false;
-  String errorMessage = '';
-  
-  // URL for the API (make it dynamic if needed for environments)
+  List<Map<String, dynamic>> _epitopeResults = [];
+  Set<String> _dynamicAlleleColumns = {}; // Stores all unique alleles to display as columns
+  bool _isLoading = false;
+  String _errorMessage = '';
+
+  // Ensure this matches your deployed Cloud Function URL
   final String apiUrl = 'https://epitope-server-998762220496.europe-west1.run.app';
 
-  // Function to fetch data from the backend
   Future<void> fetchData(String inputAlleles) async {
     setState(() {
-      isLoading = true;
-      errorMessage = '';  // Reset any previous error messages
+      _isLoading = true;
+      _errorMessage = '';
+      _epitopeResults = [];
+      _dynamicAlleleColumns = {};
     });
 
     if (inputAlleles.isEmpty) {
       setState(() {
-        errorMessage = 'Please enter allele sequence.';
-        isLoading = false;
-      });
-      return;
-    }
-
-    // Validate the input format (comma-separated alleles with optional spaces after commas)
-    RegExp regExp = RegExp(r'^[A-Za-z0-9]+\*[\d]+:[\d]+(\s*,\s*[A-Za-z0-9]+\*[\d]+:[\d]+)*$');
-    if (!regExp.hasMatch(inputAlleles)) {
-      setState(() {
-        errorMessage = 'Invalid format. Please use comma-separated alleles (e.g., C*01:02, B*08:01).';
-        isLoading = false;
+        _errorMessage = 'Please enter an allele sequence.';
+        _isLoading = false;
       });
       return;
     }
 
     try {
-      // Send POST request to your backend API
+      final List<String> parsedInput = inputAlleles.split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
       final response = await http.post(
         Uri.parse(apiUrl),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'input_alleles': inputAlleles.split(',').map((allele) => allele.trim()).toList()}),  // Split input alleles by comma and trim spaces
+        body: jsonEncode({'input_alleles': parsedInput}),
       );
 
       if (response.statusCode == 200) {
-        // If the response is successful, parse the JSON data
         final List<dynamic> rows = jsonDecode(response.body);
+        
+        // 1. Process Data
+        List<Map<String, dynamic>> processedRows = rows.map((e) => e as Map<String, dynamic>).toList();
+
+        // 2. Build the Column List (Matrix Header)
+        // We want columns for: All User Inputs + Any "Missing Required" alleles found in the results
+        Set<String> columnSet = Set.from(parsedInput);
+        
+        for (var row in processedRows) {
+          final missing = List<String>.from(row['Missing Required Alleles'] ?? []);
+          columnSet.addAll(missing);
+        }
+
+        // Sort columns alphabetically for cleaner reading
+        List<String> sortedColumns = columnSet.toList()..sort();
+
         setState(() {
-          data = rows.map((e) => e as Map<String, dynamic>).toList();
+          _epitopeResults = processedRows;
+          _dynamicAlleleColumns = sortedColumns.toSet();
         });
       } else {
-        // If the response is not successful, show an error message
         setState(() {
-          errorMessage = 'Failed to load data. Status Code: ${response.statusCode}. Please try again later.';
+          _errorMessage = 'Server Error: ${response.statusCode}';
         });
       }
     } catch (e) {
-      // If there's any error during the request
       setState(() {
-        errorMessage = 'An error occurred: $e';
+        _errorMessage = 'Connection Error: $e';
       });
     } finally {
       setState(() {
-        isLoading = false;  // Stop loading indicator
+        _isLoading = false;
       });
     }
   }
@@ -93,52 +105,143 @@ class _AlleleFinderPageState extends State<AlleleFinderPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Allele Finder')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Enter Alleles:', style: TextStyle(fontSize: 18)),
-            TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                hintText: 'Enter allele sequence (e.g., C*01:02, B*08:01)',
-                border: OutlineInputBorder(),
-                errorText: errorMessage.isEmpty ? null : errorMessage, // Display error message if any
-              ),
-              onSubmitted: (input) {
-                // When the user submits the input, call fetchData
-                fetchData(input);
-              },
+      appBar: AppBar(
+        title: Text('HLA Epitope Registry'),
+        elevation: 2,
+      ),
+      body: Column(
+        children: [
+          // --- Search Section ---
+          Container(
+            padding: EdgeInsets.all(16.0),
+            color: Colors.grey[100],
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: InputDecoration(
+                      labelText: 'Patient Alleles (Input)',
+                      hintText: 'e.g., A*01:01, B*08:01, DRB1*15:01',
+                      border: OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                  ),
+                ),
+                SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: () => fetchData(_controller.text),
+                  icon: Icon(Icons.search),
+                  label: Text('Analyze Matches'),
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: 20),
-            isLoading
-                ? Center(child: CircularProgressIndicator())  // Show loading indicator
-                : errorMessage.isNotEmpty
-                    ? Center(child: Text(errorMessage, style: TextStyle(color: Colors.red)))  // Show error message
-                    : Expanded(
-                        child: data.isEmpty
-                            ? Center(child: Text('No matches found'))  // Show when no data found
-                            : ListView.builder(
-                                itemCount: data.length,
-                                itemBuilder: (context, index) {
-                                  var result = data[index];
-                                  return Card(
-                                    margin: EdgeInsets.symmetric(vertical: 8.0),
-                                    child: ListTile(
-                                      title: Text('Epitope: ${result['Epitope Name']}'),
-                                      subtitle: Text(
-                                          'Locus: ${result['Locus']}\n'
-                                          'Positive Matches: ${result['Positive Matches'].join(', ')}\n'
-                                          'Missing Alleles: ${result['Missing Required Alleles'].join(', ')}',
-                                          style: TextStyle(fontSize: 14)),
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
+          ),
+          
+          // --- Legend Section ---
+          if (_epitopeResults.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Row(
+                children: [
+                  _buildLegendItem(Colors.green.shade400, "Positive Match"),
+                  SizedBox(width: 16),
+                  _buildLegendItem(Colors.red.shade400, "Missing Required (Negative)"),
+                  SizedBox(width: 16),
+                  _buildLegendItem(Colors.grey.shade300, "Not Relevant"),
+                ],
+              ),
+            ),
+
+          Divider(height: 1),
+
+          // --- Matrix Result Section ---
+          Expanded(
+            child: _isLoading
+                ? Center(child: CircularProgressIndicator())
+                : _errorMessage.isNotEmpty
+                    ? Center(child: Text(_errorMessage, style: TextStyle(color: Colors.red)))
+                    : _epitopeResults.isEmpty
+                        ? Center(child: Text('Enter alleles to view the Epitope Matrix.'))
+                        : _buildMatrixTable(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String text) {
+    return Row(
+      children: [
+        Container(width: 16, height: 16, color: color),
+        SizedBox(width: 4),
+        Text(text, style: TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
+  Widget _buildMatrixTable() {
+    // Convert Set to List for indexed access
+    final List<String> columnList = _dynamicAlleleColumns.toList();
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: MaterialStateProperty.all(Colors.grey[200]),
+          columnSpacing: 20,
+          border: TableBorder.all(color: Colors.grey.shade300),
+          
+          columns: [
+            DataColumn(label: Text('Epitope', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Pos (+)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green))),
+            DataColumn(label: Text('Neg (-)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red))),
+            // Dynamic Columns for Alleles
+            ...columnList.map((allele) => DataColumn(
+                  label: RotatedBox(
+                    quarterTurns: 0, // You can change to 3 if columns get too wide
+                    child: Text(allele, style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                )),
           ],
+          
+          rows: _epitopeResults.map((row) {
+            final positiveMatches = Set<String>.from(row['Positive Matches'] ?? []);
+            final missingRequired = Set<String>.from(row['Missing Required Alleles'] ?? []);
+
+            return DataRow(cells: [
+              // Fixed Info Columns
+              DataCell(Text(row['Epitope Name'] ?? 'Unknown', style: TextStyle(fontWeight: FontWeight.bold))),
+              DataCell(Text(row['Number of Positive Matches'].toString())),
+              DataCell(Text(row['Number of Missing Required Alleles'].toString())),
+              
+              // Dynamic Allele Matrix Cells
+              ...columnList.map((allele) {
+                Color? cellColor;
+                
+                if (positiveMatches.contains(allele)) {
+                  cellColor = Colors.green.shade400;
+                } else if (missingRequired.contains(allele)) {
+                  cellColor = Colors.red.shade400;
+                } else {
+                  cellColor = Colors.grey.shade100;
+                }
+
+                return DataCell(
+                  Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: cellColor,
+                  ),
+                );
+              }),
+            ]);
+          }).toList(),
         ),
       ),
     );
