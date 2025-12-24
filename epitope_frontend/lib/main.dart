@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:flutter/gestures.dart'; // Required for mouse scroll
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Required for keyboard keys
 import 'package:http/http.dart' as http;
 
 void main() {
@@ -29,7 +31,9 @@ class EpitopeMatrixPage extends StatefulWidget {
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _horizontalScrollController = ScrollController();
-  
+  final ScrollController _verticalScrollController = ScrollController(); // Added Vertical Controller
+
+  // Data State
   List<Map<String, dynamic>> _epitopeResults = [];
   List<String> _sortedColumns = []; 
   Set<String> _userAllelesSet = {}; 
@@ -39,11 +43,27 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   final String apiUrl = 'https://epitope-server-998762220496.europe-west1.run.app';
 
-  // UI Constants for CustomPainter
-  final double cellWidth = 80.0;
-  final double cellHeight = 40.0;
+  // --- ZOOM & LAYOUT STATE ---
+  double _zoomLevel = 1.0; 
+  
+  final double baseCellWidth = 28.0; 
+  final double baseCellHeight = 28.0; 
+  final double baseHeaderHeight = 140.0;
+
+  double get currentCellWidth => baseCellWidth * _zoomLevel;
+  double get currentCellHeight => baseCellHeight * _zoomLevel;
+  double get currentHeaderHeight => baseHeaderHeight * _zoomLevel;
+  double get currentFontSize => 12.0 * _zoomLevel;
+
+  // --- ZOOM LOGIC ---
+  void _updateZoom(double change) {
+    setState(() {
+      _zoomLevel = (_zoomLevel + change).clamp(0.5, 3.0); // Limit zoom between 50% and 300%
+    });
+  }
 
   Future<void> fetchData(String inputAlleles) async {
+    // ... (Same Fetch Logic as before) ...
     setState(() {
       _isLoading = true;
       _errorMessage = '';
@@ -74,7 +94,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       if (response.statusCode == 200) {
         final List<dynamic> rawRows = jsonDecode(response.body);
         
-        // 1. FILTER: Only show rows with matches
         List<Map<String, dynamic>> processedRows = rawRows
             .map((e) => e as Map<String, dynamic>)
             .where((row) {
@@ -91,7 +110,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           return;
         }
 
-        // 2. SORT COLUMNS
         List<String> positiveCols = List.from(parsedInput)..sort();
         _userAllelesSet = parsedInput.toSet();
 
@@ -126,59 +144,128 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   @override
   Widget build(BuildContext context) {
-    const double nameWidth = 120;
-    const double countWidth = 60;
-    
-    // Total width is fixed columns + dynamic heatmap width
-    double totalWidth = nameWidth + (countWidth * 2) + (_sortedColumns.length * cellWidth);
-
-    return Scaffold(
-      appBar: AppBar(title: Text('HLA Epitope Registry')),
-      body: Column(
-        children: [
-          _buildSearchHeader(),
-          if (_epitopeResults.isNotEmpty) _buildLegend(),
-          Divider(height: 1),
-          
-          Expanded(
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator())
-                : _errorMessage.isNotEmpty
-                    ? Center(child: Text(_errorMessage, style: TextStyle(color: Colors.red)))
-                    : _epitopeResults.isEmpty
-                        ? Center(child: Text('Enter alleles to view matrix.'))
-                        : Scrollbar(
-                            controller: _horizontalScrollController,
-                            thumbVisibility: true,
-                            trackVisibility: true,
-                            child: SingleChildScrollView(
-                              controller: _horizontalScrollController,
-                              scrollDirection: Axis.horizontal,
-                              child: SizedBox(
-                                width: totalWidth,
-                                child: Column(
-                                  children: [
-                                    _buildHeaderRow(nameWidth, countWidth),
-                                    Expanded(
-                                      child: ListView.builder(
-                                        itemCount: _epitopeResults.length,
-                                        // "itemExtent" forces fixed height, greatly improving scrolling performance
-                                        itemExtent: cellHeight, 
-                                        itemBuilder: (context, index) {
-                                          return _buildHighPerformanceRow(
-                                            _epitopeResults[index],
-                                            nameWidth,
-                                            countWidth,
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+    // Shortcuts Wrapper handles keyboard events
+    return CallbackShortcuts(
+      bindings: {
+        // Option 1: Ctrl + Equal (= is the plus key)
+        const SingleActivator(LogicalKeyboardKey.equal, control: true): () => _updateZoom(0.1),
+        const SingleActivator(LogicalKeyboardKey.add, control: true): () => _updateZoom(0.1),
+        // Option 2: Ctrl + Minus
+        const SingleActivator(LogicalKeyboardKey.minus, control: true): () => _updateZoom(-0.1),
+        
+        // Option 3: Fallback keys (Alt + Plus/Minus) just in case browser steals Ctrl
+        const SingleActivator(LogicalKeyboardKey.equal, alt: true): () => _updateZoom(0.1),
+        const SingleActivator(LogicalKeyboardKey.minus, alt: true): () => _updateZoom(-0.1),
+      },
+      child: Focus(
+        autofocus: true, // Allows the widget to capture keys immediately
+        child: Scaffold(
+          appBar: AppBar(title: Text('HLA Epitope Registry')),
+          body: Column(
+            children: [
+              _buildSearchHeader(),
+              
+              if (_epitopeResults.isNotEmpty) ...[
+                 _buildLegend(),
+                 _buildZoomControl(), 
+                 Divider(height: 1),
+              ],
+              
+              Expanded(
+                child: _isLoading
+                    ? Center(child: CircularProgressIndicator())
+                    : _errorMessage.isNotEmpty
+                        ? Center(child: Text(_errorMessage, style: TextStyle(color: Colors.red)))
+                        : _epitopeResults.isEmpty
+                            ? Center(child: Text('Enter alleles to view matrix.'))
+                            : _buildMatrixContent(), // Extracted for cleanliness
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // Wraps the matrix in a Mouse Listener to handle Ctrl + Scroll
+  Widget _buildMatrixContent() {
+    const double nameWidth = 100;
+    const double countWidth = 50;
+    double totalWidth = nameWidth + (countWidth * 2) + (_sortedColumns.length * currentCellWidth);
+
+    return Listener(
+      onPointerSignal: (pointerSignal) {
+        if (pointerSignal is PointerScrollEvent) {
+          // Check if Control key is held down
+          if (HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.controlLeft) ||
+              HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.controlRight)) {
+            
+            // Determine direction
+            double change = pointerSignal.scrollDelta.dy > 0 ? -0.1 : 0.1;
+            _updateZoom(change);
+          }
+        }
+      },
+      child: Scrollbar(
+        controller: _horizontalScrollController,
+        thumbVisibility: true,
+        trackVisibility: true,
+        thickness: 12,
+        child: SingleChildScrollView(
+          controller: _horizontalScrollController,
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: totalWidth,
+            child: Column(
+              children: [
+                _buildHeaderRow(nameWidth, countWidth),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _verticalScrollController, // Attach vertical controller
+                    itemCount: _epitopeResults.length,
+                    itemExtent: currentCellHeight,
+                    itemBuilder: (context, index) {
+                      return _buildHighPerformanceRow(
+                        _epitopeResults[index],
+                        nameWidth,
+                        countWidth,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZoomControl() {
+    return Container(
+      color: Colors.grey[50],
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text("Zoom: ${(_zoomLevel * 100).round()}%", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          SizedBox(width: 8),
+          Icon(Icons.zoom_out, size: 20, color: Colors.grey),
+          SizedBox(
+            width: 200,
+            child: Slider(
+              value: _zoomLevel,
+              min: 0.5,
+              max: 3.0, // Increased max zoom
+              divisions: 25,
+              onChanged: (value) {
+                setState(() {
+                  _zoomLevel = value;
+                });
+              },
+            ),
+          ),
+          Icon(Icons.zoom_in, size: 20, color: Colors.grey),
         ],
       ),
     );
@@ -199,6 +286,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 border: OutlineInputBorder(),
                 filled: true,
                 fillColor: Colors.white,
+                isDense: true, 
               ),
             ),
           ),
@@ -240,22 +328,37 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   Widget _buildHeaderRow(double nameW, double countW) {
     return Container(
-      height: 50,
+      height: currentHeaderHeight,
       color: Colors.grey[200],
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           _fixedCell('Epitope', nameW, isHeader: true),
-          _fixedCell('Pos (+)', countW, isHeader: true, textColor: Colors.green),
-          _fixedCell('Neg (-)', countW, isHeader: true, textColor: Colors.red),
-          // Dynamic Headers
+          _fixedCell('Pos', countW, isHeader: true, textColor: Colors.green),
+          _fixedCell('Neg', countW, isHeader: true, textColor: Colors.red),
           ..._sortedColumns.map((allele) {
              bool isUserAllele = _userAllelesSet.contains(allele);
-             return _fixedCell(
-               allele, 
-               cellWidth, 
-               isHeader: true, 
-               textColor: isUserAllele ? Colors.black : Colors.grey[700],
-               fontWeight: isUserAllele ? FontWeight.bold : FontWeight.normal
+             return Container(
+               width: currentCellWidth,
+               decoration: BoxDecoration(
+                 border: Border(right: BorderSide(color: Colors.grey.shade300)),
+               ),
+               child: RotatedBox(
+                 quarterTurns: 3, 
+                 child: Container(
+                   alignment: Alignment.centerLeft,
+                   padding: EdgeInsets.symmetric(horizontal: 4),
+                   child: Text(
+                     allele,
+                     style: TextStyle(
+                       fontSize: currentFontSize,
+                       fontWeight: isUserAllele ? FontWeight.bold : FontWeight.normal,
+                       color: isUserAllele ? Colors.black : Colors.grey[700],
+                     ),
+                     overflow: TextOverflow.visible,
+                   ),
+                 ),
+               ),
              );
           }),
         ],
@@ -263,16 +366,12 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     );
   }
 
-  // --- THE OPTIMIZATION IS HERE ---
   Widget _buildHighPerformanceRow(Map<String, dynamic> row, double nameW, double countW) {
-    // We still use standard widgets for the text on the left (Name, Counts)
-    // But we use ONE CustomPaint widget for the entire strip of colored boxes on the right.
-    
     final positiveMatches = Set<String>.from(row['Positive Matches'] ?? []);
     final missingRequired = Set<String>.from(row['Missing Required Alleles'] ?? []);
 
     return Container(
-      height: cellHeight,
+      height: currentCellHeight,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
@@ -283,7 +382,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           _fixedCell(row['Number of Positive Matches'].toString(), countW),
           _fixedCell(row['Number of Missing Required Alleles'].toString(), countW),
           
-          // This Widget replaces the list of 50+ Containers
           Expanded(
             child: CustomPaint(
               size: Size.infinite,
@@ -291,7 +389,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 columns: _sortedColumns,
                 positiveMatches: positiveMatches,
                 missingRequired: missingRequired,
-                cellWidth: cellWidth,
+                cellWidth: currentCellWidth,
               ),
             ),
           ),
@@ -304,6 +402,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     return Container(
       width: width,
       alignment: Alignment.center,
+      padding: EdgeInsets.symmetric(horizontal: 2),
       decoration: isHeader 
         ? BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.shade300)))
         : null,
@@ -312,7 +411,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         style: TextStyle(
           fontWeight: fontWeight ?? (isHeader ? FontWeight.bold : FontWeight.normal),
           color: textColor ?? Colors.black87,
-          fontSize: 13,
+          fontSize: isHeader ? 12 : 11,
         ),
         overflow: TextOverflow.ellipsis,
       ),
@@ -320,8 +419,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   }
 }
 
-// --- CUSTOM PAINTER CLASS ---
-// This draws directly to the canvas, bypassing the Widget tree overhead.
 class HeatmapRowPainter extends CustomPainter {
   final List<String> columns;
   final Set<String> positiveMatches;
@@ -340,37 +437,31 @@ class HeatmapRowPainter extends CustomPainter {
     final Paint paint = Paint()..style = PaintingStyle.fill;
     final Paint borderPaint = Paint()
       ..color = Colors.white
-      ..strokeWidth = 1
+      ..strokeWidth = 0.5
       ..style = PaintingStyle.stroke;
 
     for (int i = 0; i < columns.length; i++) {
       String allele = columns[i];
       
-      // Determine color
       if (positiveMatches.contains(allele)) {
-        paint.color = Colors.green.shade400;
+        paint.color = Colors.green.shade600;
       } else if (missingRequired.contains(allele)) {
-        paint.color = Colors.red.shade400;
+        paint.color = Colors.red.shade600;
       } else {
         paint.color = Colors.grey.shade100;
       }
 
-      // Define the rectangle for this cell
       Rect rect = Rect.fromLTWH(i * cellWidth, 0, cellWidth, size.height);
-      
-      // Draw Fill
       canvas.drawRect(rect, paint);
-      
-      // Draw Border (Grid line)
       canvas.drawRect(rect, borderPaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant HeatmapRowPainter oldDelegate) {
-    // Only repaint if the data changes
     return oldDelegate.columns != columns ||
            oldDelegate.positiveMatches != positiveMatches ||
-           oldDelegate.missingRequired != missingRequired;
+           oldDelegate.missingRequired != missingRequired ||
+           oldDelegate.cellWidth != cellWidth;
   }
 }
