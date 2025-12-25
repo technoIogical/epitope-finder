@@ -29,31 +29,26 @@ class EpitopeMatrixPage extends StatefulWidget {
 }
 
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
-  // --- CONTROLLERS ---
   final TextEditingController _antibodyController = TextEditingController();
-  final TextEditingController _recipientHlaController = TextEditingController(); // Sent to backend for sorting + Visual "S"
-  final TextEditingController _donorHlaController = TextEditingController();     // Visual "D" only
+  final TextEditingController _recipientHlaController = TextEditingController(); 
+  final TextEditingController _donorHlaController = TextEditingController();     
   
   final ScrollController _horizontalScrollController = ScrollController();
   final ScrollController _verticalScrollController = ScrollController();
 
-  // --- DATA STATE ---
   List<Map<String, dynamic>> _epitopeResults = [];
   List<String> _sortedColumns = []; 
   Set<String> _userAllelesSet = {}; 
   
-  // Lists for visual marking
   Set<String> _recipientHlaSet = {};
   Set<String> _donorHlaSet = {};
   
   bool _isLoading = false;
   String _errorMessage = '';
 
-  // !!! IMPORTANT: UPDATE THIS URL !!!
-  // Check your Google Cloud Run page if you are unsure.
+  // Use the updated server URL
   final String apiUrl = 'https://epitope-server-998762220496.europe-west1.run.app';
 
-  // --- ZOOM & LAYOUT STATE ---
   double _zoomLevel = 1.0; 
   final double baseCellWidth = 28.0; 
   final double baseCellHeight = 28.0; 
@@ -107,13 +102,10 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         Uri.parse(apiUrl),
         headers: {
           'Content-Type': 'application/json',
-          // !!! AUTHENTICATION !!!
-          // Run `gcloud auth print-identity-token` in terminal and paste below.
           'Authorization': 'Bearer PASTE_YOUR_LONG_TOKEN_HERE', 
         },
         body: jsonEncode({
           'input_alleles': parsedAntibodies, 
-          // CRITICAL: We send recipient_hla so the backend can sort "S" matches to the bottom.
           'recipient_hla': parsedRecipientHla,
         }),
       );
@@ -133,7 +125,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           return;
         }
 
-        // Gather columns for the matrix
         List<String> positiveCols = List.from(parsedAntibodies)..sort();
         _userAllelesSet = parsedAntibodies.toSet();
 
@@ -229,7 +220,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 TextField(
                   controller: _recipientHlaController,
                   decoration: InputDecoration(
-                    labelText: 'Recipient HLA (Sorted to Bottom, Marks "S")',
+                    labelText: 'Recipient HLA (Self Antibody - Marks "S")',
                     hintText: 'e.g. A*02:01',
                     border: OutlineInputBorder(),
                     filled: true, fillColor: Colors.blue[50], isDense: true,
@@ -239,7 +230,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 TextField(
                   controller: _donorHlaController,
                   decoration: InputDecoration(
-                    labelText: 'Donor HLA (Marks "D")',
+                    labelText: 'Donor HLA (DSA - Marks "D")',
                     hintText: 'e.g. B*44:02',
                     border: OutlineInputBorder(),
                     filled: true, fillColor: Colors.orange[50], isDense: true,
@@ -276,17 +267,17 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           _legendItem(Colors.red.shade600, "Missing Required"),
           Row(children: [
             Text("S ", style: TextStyle(fontWeight: FontWeight.bold)),
-            Text("= Recipient HLA"),
+            Text("= Self Antibody"),
           ]),
           Row(children: [
             Text("D ", style: TextStyle(fontWeight: FontWeight.bold)),
-            Text("= Donor HLA"),
+            Text("= DSA"),
           ]),
           Row(children: [
              Container(width: 12, height: 12, color: Colors.pink[100], 
                child: Center(child: Text("Name", style: TextStyle(fontSize: 8)))),
              SizedBox(width: 4),
-             Text("= Highlighted (Row has S or D)"),
+             Text("= Highlighted (Row has Self or DSA)"),
           ]),
         ],
       ),
@@ -385,11 +376,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     final missingRequired = Set<String>.from(row['Missing Required Alleles'] ?? []);
     final allAlleles = List<String>.from(row['All_Epitope_Alleles'] ?? []);
 
-    // LOGIC: Check if this row deserves a Pink Highlight
     bool hasS = false;
     bool hasD = false;
     
-    // Check if any allele in this epitope matches Recipient or Donor lists
     for (String allele in allAlleles) {
       if (_recipientHlaSet.contains(allele)) hasS = true;
       if (_donorHlaSet.contains(allele)) hasD = true;
@@ -406,7 +395,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       ),
       child: Row(
         children: [
-          // Name Cell gets PINK background if S or D exists
           _fixedCell(row['Epitope Name'] ?? '', nameW, bgColor: nameBgColor),
           _fixedCell(row['Number of Positive Matches'].toString(), countW),
           _fixedCell(row['Number of Missing Required Alleles'].toString(), countW),
@@ -419,7 +407,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 positiveMatches: positiveMatches,
                 missingRequired: missingRequired,
                 cellWidth: currentCellWidth,
-                // Pass lists to Painter to draw S/D
                 recipientSet: _recipientHlaSet,
                 donorSet: _donorHlaSet,
                 fontSize: currentFontSize,
@@ -435,7 +422,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     return Container(
       width: width,
       alignment: Alignment.center,
-      color: bgColor, // Background color support
+      color: bgColor, 
       padding: EdgeInsets.symmetric(horizontal: 2),
       decoration: isHeader 
         ? BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.shade300)))
@@ -484,8 +471,6 @@ class HeatmapRowPainter extends CustomPainter {
   final Set<String> positiveMatches;
   final Set<String> missingRequired;
   final double cellWidth;
-  
-  // S/D Logic Inputs
   final Set<String> recipientSet;
   final Set<String> donorSet;
   final double fontSize;
@@ -510,27 +495,22 @@ class HeatmapRowPainter extends CustomPainter {
 
     for (int i = 0; i < columns.length; i++) {
       String allele = columns[i];
-      
-      // Determine if this allele is part of the epitope (Green or Red)
       bool isPositive = positiveMatches.contains(allele);
       bool isMissing = missingRequired.contains(allele);
       bool isAlleleInEpitope = isPositive || isMissing;
 
-      // 1. Draw Background Color
       if (isPositive) {
         paint.color = Colors.green.shade600;
       } else if (isMissing) {
         paint.color = Colors.red.shade600;
       } else {
-        paint.color = Colors.grey.shade100; // Not relevant to this epitope
+        paint.color = Colors.grey.shade100;
       }
 
       Rect rect = Rect.fromLTWH(i * cellWidth, 0, cellWidth, size.height);
       canvas.drawRect(rect, paint);
       canvas.drawRect(rect, borderPaint);
 
-      // 2. Draw "S" or "D" overlay
-      // ONLY draw if the allele is actually part of this epitope (Green/Red cell)
       if (isAlleleInEpitope) {
         String? label;
         if (recipientSet.contains(allele)) {
@@ -543,7 +523,7 @@ class HeatmapRowPainter extends CustomPainter {
           final textSpan = TextSpan(
             text: label,
             style: TextStyle(
-              color: Colors.white, // White text stands out better on Green/Red
+              color: Colors.white,
               fontSize: fontSize,
               fontWeight: FontWeight.bold,
               shadows: [
@@ -557,7 +537,6 @@ class HeatmapRowPainter extends CustomPainter {
           );
           textPainter.layout();
           
-          // Center the text in the cell
           final offset = Offset(
             (i * cellWidth) + (cellWidth - textPainter.width) / 2,
             (size.height - textPainter.height) / 2,
