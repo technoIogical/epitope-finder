@@ -4,7 +4,6 @@ import os
 
 @functions_framework.http
 def fetch_bq_epitopes(request):
-    # Set CORS headers
     if request.method == "OPTIONS":
         headers = {
             "Access-Control-Allow-Origin": "*",
@@ -20,18 +19,20 @@ def fetch_bq_epitopes(request):
     if request_json is None:
         return ("Bad Request: Request body must be valid JSON.", 400, headers)
 
-    # We only strictly need 'input_alleles' (Antibodies) for the search now.
-    # Recipient/Donor HLA will be handled visually on the frontend.
     input_alleles = request_json.get("input_alleles", [])
+    recipient_hla = request_json.get("recipient_hla", []) # <--- Needed for "S" sorting
 
     if not input_alleles:
         return ("Bad Request: `input_alleles` array is required.", 400, headers)
 
-    # Query: Find matches, but REMOVED the "WHERE NOT EXISTS" exclusion filter.
     query = """
     WITH 
     user_antibodies AS (
       SELECT allele FROM UNNEST(@input_alleles) AS allele
+    ),
+    
+    recipient_hla_list AS (
+      SELECT allele FROM UNNEST(@recipient_hla) AS allele
     ),
     
     matches AS (
@@ -56,21 +57,25 @@ def fetch_bq_epitopes(request):
     )
     
     SELECT
-      `Epitope ID`,
-      `Epitope Name`,
-      Locus,
-      All_Epitope_Alleles, -- We return ALL alleles now so Frontend can check for S/D
-      `Positive Matches`,
+      *,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
-      `Missing Required Alleles`,
-      CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`
+      CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`,
+      
+      -- CALCULATION: How many "S" (Self) alleles are in the positive matches?
+      (
+        SELECT COUNT(1) 
+        FROM UNNEST(`Positive Matches`) AS pm
+        WHERE pm IN (SELECT allele FROM recipient_hla_list)
+      ) AS `Self_Match_Count`
     FROM
       matches
     WHERE
       ARRAY_LENGTH(`Positive Matches`) > 0
     ORDER BY
-      `Number of Positive Matches` DESC,
-      `Number of Missing Required Alleles` ASC;
+      -- RANKING LOGIC:
+      `Self_Match_Count` ASC,              -- 1. Least "S" on top
+      `Number of Positive Matches` DESC,   -- 2. More Positive matches on top
+      `Number of Missing Required Alleles` ASC; -- 3. Less Negative matches on top
     """
 
     project_id = "epitopefinder-458404"
@@ -80,6 +85,7 @@ def fetch_bq_epitopes(request):
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
+                bigquery.ArrayQueryParameter("recipient_hla", "STRING", recipient_hla),
             ],
         )
         query_job = client.query(query, job_config=job_config)
