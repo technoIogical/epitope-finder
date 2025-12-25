@@ -10,7 +10,8 @@ def fetch_bq_epitopes(request):
         headers = {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST",
-            "Access-Control-Allow-Headers": "Content-Type",
+            # Added 'Authorization' here to fix browser CORS issues
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "3600",
         }
         return ("", 204, headers)
@@ -18,11 +19,17 @@ def fetch_bq_epitopes(request):
     # Set CORS headers for the main request
     headers = {"Access-Control-Allow-Origin": "*"}
 
+    # Attempt to parse JSON
     request_json = request.get_json(silent=True)
 
+    # --- FIX STARTS HERE ---
+    # If the body was empty or not JSON, request_json will be None.
+    # We must stop here to prevent the crash.
+    if request_json is None:
+        return ("Bad Request: Request body must be valid JSON.", 400, headers)
+    # --- FIX ENDS HERE ---
+
     # 1. Get both inputs from the request
-    # "input_alleles" = Recipient Antibodies (Positive Matches)
-    # "recipient_hla" = Recipient HLA Type (Exclusion Filter)
     input_alleles = request_json.get("input_alleles", [])
     recipient_hla = request_json.get("recipient_hla", [])
 
