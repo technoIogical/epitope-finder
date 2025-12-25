@@ -4,44 +4,34 @@ import os
 
 @functions_framework.http
 def fetch_bq_epitopes(request):
-
-    # Set CORS headers for the preflight request
+    # Set CORS headers
     if request.method == "OPTIONS":
         headers = {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST",
-            # --- FIX IS HERE: Added 'Authorization' to the allowed list ---
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "3600",
         }
         return ("", 204, headers)
 
-    # Set CORS headers for the main request
     headers = {"Access-Control-Allow-Origin": "*"}
 
-    # Attempt to parse JSON safely
     request_json = request.get_json(silent=True)
-
-    # Safety check: if body is empty or invalid JSON, stop here
     if request_json is None:
         return ("Bad Request: Request body must be valid JSON.", 400, headers)
 
-    # 1. Get both inputs from the request
+    # We only strictly need 'input_alleles' (Antibodies) for the search now.
+    # Recipient/Donor HLA will be handled visually on the frontend.
     input_alleles = request_json.get("input_alleles", [])
-    recipient_hla = request_json.get("recipient_hla", [])
 
     if not input_alleles:
         return ("Bad Request: `input_alleles` array is required.", 400, headers)
 
-    # 2. Updated Query with Exclusion Logic
+    # Query: Find matches, but REMOVED the "WHERE NOT EXISTS" exclusion filter.
     query = """
     WITH 
     user_antibodies AS (
       SELECT allele FROM UNNEST(@input_alleles) AS allele
-    ),
-    
-    recipient_hla_exclusion AS (
-      SELECT allele FROM UNNEST(@recipient_hla) AS allele
     ),
     
     matches AS (
@@ -49,7 +39,7 @@ def fetch_bq_epitopes(request):
         t.epitope_id AS `Epitope ID`,
         t.epitope_name AS `Epitope Name`,
         t.locus AS Locus,
-        t.alleles AS All_Epitope_Alleles, -- Needed for exclusion check
+        t.alleles AS All_Epitope_Alleles, 
         ARRAY(
           SELECT allele FROM UNNEST(t.alleles) AS allele
           WHERE allele IN (SELECT allele FROM user_antibodies)
@@ -69,6 +59,7 @@ def fetch_bq_epitopes(request):
       `Epitope ID`,
       `Epitope Name`,
       Locus,
+      All_Epitope_Alleles, -- We return ALL alleles now so Frontend can check for S/D
       `Positive Matches`,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
       `Missing Required Alleles`,
@@ -76,37 +67,23 @@ def fetch_bq_epitopes(request):
     FROM
       matches
     WHERE
-      -- EXCLUSION LOGIC:
-      -- Filter out this epitope if ANY of its alleles appear in the 'recipient_hla' list.
-      NOT EXISTS (
-        SELECT 1 
-        FROM UNNEST(All_Epitope_Alleles) AS e_allele
-        JOIN recipient_hla_exclusion AS r_allele ON e_allele = r_allele.allele
-      )
+      ARRAY_LENGTH(`Positive Matches`) > 0
     ORDER BY
       `Number of Positive Matches` DESC,
       `Number of Missing Required Alleles` ASC;
     """
 
-    # Use the specific project ID
     project_id = "epitopefinder-458404"
 
     try:
         client = bigquery.Client(project=project_id)
-
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
-                bigquery.ArrayQueryParameter("recipient_hla", "STRING", recipient_hla), 
             ],
         )
-
         query_job = client.query(query, job_config=job_config)
-
-        rows = query_job.result()
-
-        results = [dict(row) for row in rows]
-
+        results = [dict(row) for row in query_job.result()]
         return (results, 200, headers)
 
     except Exception as e:
