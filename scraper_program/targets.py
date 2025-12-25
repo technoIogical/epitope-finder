@@ -1,9 +1,9 @@
-possible_targets = ["ABC", "DRB", "DQ", "DP", "MICA"]
+possible_targets = ["ABC", "DRB", "DQ", "DP", "MICA", "DRDQDP"]
 
 
 def input_targets():
     print(
-        "Possible targets include: 1. ABC 2. DRB 3. DQ 4. DP 5. MICA"
+        "Possible targets include: 1. ABC 2. DRB 3. DQ 4. DP 5. MICA 6. DRDQDP"
         "\n"
         "Type desired targets with spaces"
     )
