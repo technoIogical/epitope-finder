@@ -4,7 +4,7 @@ import json
 
 def run_cloud_function_query(alleles):
     
-    cloud_function_url = "https://epitope-server-998762220496.europe-west1.run.app"
+    cloud_function_url = "https://epitope-server-998762220496.europe-west1.run.app/"
     payload = {"input_alleles": alleles}
     headers = {"Content-Type": "application/json"}
 

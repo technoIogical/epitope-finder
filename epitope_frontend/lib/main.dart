@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:flutter/gestures.dart'; // Required for mouse scroll
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Required for keyboard keys
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
@@ -29,11 +29,14 @@ class EpitopeMatrixPage extends StatefulWidget {
 }
 
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
-  final TextEditingController _controller = TextEditingController();
+  // --- CONTROLLERS ---
+  final TextEditingController _antibodyController = TextEditingController(); 
+  final TextEditingController _recipientHlaController = TextEditingController(); 
+  
   final ScrollController _horizontalScrollController = ScrollController();
-  final ScrollController _verticalScrollController = ScrollController(); // Added Vertical Controller
+  final ScrollController _verticalScrollController = ScrollController();
 
-  // Data State
+  // --- DATA STATE ---
   List<Map<String, dynamic>> _epitopeResults = [];
   List<String> _sortedColumns = []; 
   Set<String> _userAllelesSet = {}; 
@@ -41,11 +44,11 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   bool _isLoading = false;
   String _errorMessage = '';
 
+  // *** UPDATED URL HERE ***
   final String apiUrl = 'https://epitope-server-998762220496.europe-west1.run.app';
 
   // --- ZOOM & LAYOUT STATE ---
   double _zoomLevel = 1.0; 
-  
   final double baseCellWidth = 28.0; 
   final double baseCellHeight = 28.0; 
   final double baseHeaderHeight = 140.0;
@@ -55,15 +58,23 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   double get currentHeaderHeight => baseHeaderHeight * _zoomLevel;
   double get currentFontSize => 12.0 * _zoomLevel;
 
-  // --- ZOOM LOGIC ---
   void _updateZoom(double change) {
     setState(() {
-      _zoomLevel = (_zoomLevel + change).clamp(0.5, 3.0); // Limit zoom between 50% and 300%
+      _zoomLevel = (_zoomLevel + change).clamp(0.5, 3.0);
     });
   }
 
-  Future<void> fetchData(String inputAlleles) async {
-    // ... (Same Fetch Logic as before) ...
+  List<String> _parseInput(String input) {
+    return input.split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> fetchData() async {
+    String antibodyInput = _antibodyController.text;
+    String recipientHlaInput = _recipientHlaController.text;
+
     setState(() {
       _isLoading = true;
       _errorMessage = '';
@@ -71,24 +82,31 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       _sortedColumns = [];
     });
 
-    if (inputAlleles.isEmpty) {
+    if (antibodyInput.isEmpty) {
       setState(() {
-        _errorMessage = 'Please enter an allele sequence.';
+        _errorMessage = 'Please enter Recipient Antibodies.';
         _isLoading = false;
       });
       return;
     }
 
     try {
-      final List<String> parsedInput = inputAlleles.split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+      final List<String> parsedAntibodies = _parseInput(antibodyInput);
+      final List<String> parsedRecipientHla = _parseInput(recipientHlaInput);
 
       final response = await http.post(
         Uri.parse(apiUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'input_alleles': parsedInput}),
+        headers: {
+          'Content-Type': 'application/json',
+          // !!! AUTHENTICATION !!!
+          // Since your server is PRIVATE, you MUST paste your token below.
+          // Get it by running: gcloud auth print-identity-token
+          'Authorization': 'Bearer PASTE_YOUR_LONG_TOKEN_HERE', 
+        },
+        body: jsonEncode({
+          'input_alleles': parsedAntibodies, 
+          'recipient_hla': parsedRecipientHla 
+        }),
       );
 
       if (response.statusCode == 200) {
@@ -105,13 +123,13 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         if (processedRows.isEmpty) {
            setState(() {
             _isLoading = false;
-            _errorMessage = "No compatible epitopes found (0 matches).";
+            _errorMessage = "No matches found (or all matches were excluded).";
           });
           return;
         }
 
-        List<String> positiveCols = List.from(parsedInput)..sort();
-        _userAllelesSet = parsedInput.toSet();
+        List<String> positiveCols = List.from(parsedAntibodies)..sort();
+        _userAllelesSet = parsedAntibodies.toSet();
 
         Set<String> negativeColSet = {};
         for (var row in processedRows) {
@@ -144,21 +162,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Shortcuts Wrapper handles keyboard events
     return CallbackShortcuts(
       bindings: {
-        // Option 1: Ctrl + Equal (= is the plus key)
         const SingleActivator(LogicalKeyboardKey.equal, control: true): () => _updateZoom(0.1),
         const SingleActivator(LogicalKeyboardKey.add, control: true): () => _updateZoom(0.1),
-        // Option 2: Ctrl + Minus
         const SingleActivator(LogicalKeyboardKey.minus, control: true): () => _updateZoom(-0.1),
-        
-        // Option 3: Fallback keys (Alt + Plus/Minus) just in case browser steals Ctrl
         const SingleActivator(LogicalKeyboardKey.equal, alt: true): () => _updateZoom(0.1),
         const SingleActivator(LogicalKeyboardKey.minus, alt: true): () => _updateZoom(-0.1),
       },
       child: Focus(
-        autofocus: true, // Allows the widget to capture keys immediately
+        autofocus: true, 
         child: Scaffold(
           appBar: AppBar(title: Text('HLA Epitope Registry')),
           body: Column(
@@ -177,8 +190,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     : _errorMessage.isNotEmpty
                         ? Center(child: Text(_errorMessage, style: TextStyle(color: Colors.red)))
                         : _epitopeResults.isEmpty
-                            ? Center(child: Text('Enter alleles to view matrix.'))
-                            : _buildMatrixContent(), // Extracted for cleanliness
+                            ? Center(child: Text('Enter antibodies to view matrix.'))
+                            : _buildMatrixContent(),
               ),
             ],
           ),
@@ -187,7 +200,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     );
   }
 
-  // Wraps the matrix in a Mouse Listener to handle Ctrl + Scroll
   Widget _buildMatrixContent() {
     const double nameWidth = 100;
     const double countWidth = 50;
@@ -196,11 +208,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     return Listener(
       onPointerSignal: (pointerSignal) {
         if (pointerSignal is PointerScrollEvent) {
-          // Check if Control key is held down
           if (HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.controlLeft) ||
               HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.controlRight)) {
-            
-            // Determine direction
             double change = pointerSignal.scrollDelta.dy > 0 ? -0.1 : 0.1;
             _updateZoom(change);
           }
@@ -221,7 +230,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 _buildHeaderRow(nameWidth, countWidth),
                 Expanded(
                   child: ListView.builder(
-                    controller: _verticalScrollController, // Attach vertical controller
+                    controller: _verticalScrollController,
                     itemCount: _epitopeResults.length,
                     itemExtent: currentCellHeight,
                     itemBuilder: (context, index) {
@@ -256,7 +265,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             child: Slider(
               value: _zoomLevel,
               min: 0.5,
-              max: 3.0, // Increased max zoom
+              max: 3.0,
               divisions: 25,
               onChanged: (value) {
                 setState(() {
@@ -276,25 +285,48 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       padding: EdgeInsets.all(16.0),
       color: Colors.grey[100],
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                labelText: 'Patient Alleles',
-                hintText: 'e.g. A*01:01, B*08:01',
-                border: OutlineInputBorder(),
-                filled: true,
-                fillColor: Colors.white,
-                isDense: true, 
-              ),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _antibodyController,
+                  decoration: InputDecoration(
+                    labelText: 'Recipient Antibodies (e.g. A*01:01, B*08:01)',
+                    hintText: 'Enter antibodies to check for positive matches',
+                    border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
+                  ),
+                ),
+                SizedBox(height: 8),
+                TextField(
+                  controller: _recipientHlaController,
+                  decoration: InputDecoration(
+                    labelText: 'Recipient HLA Type (Excluded)',
+                    hintText: 'Enter HLA alleles to EXCLUDE (e.g. A*02:01)',
+                    border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Colors.red[50],
+                    isDense: true,
+                  ),
+                ),
+              ],
             ),
           ),
           SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: () => fetchData(_controller.text),
-            icon: Icon(Icons.search),
-            label: Text('Analyze'),
+          SizedBox(
+            height: 100, 
+            child: ElevatedButton.icon(
+              onPressed: () => fetchData(),
+              icon: Icon(Icons.search),
+              label: Text('Analyze'),
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
           ),
         ],
       ),
