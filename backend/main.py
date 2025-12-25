@@ -84,7 +84,8 @@ def fetch_bq_epitopes(request):
       `Number of Missing Required Alleles` ASC;
     """
 
-    project_id = os.environ.get("EpitopeFinder", "epitopefinder-458404")
+    # Use the specific project ID
+    project_id = "epitopefinder-458404"
 
     try:
         client = bigquery.Client(project=project_id)
@@ -92,7 +93,7 @@ def fetch_bq_epitopes(request):
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
-                bigquery.ArrayQueryParameter("recipient_hla", "STRING", recipient_hla), # New Parameter
+                bigquery.ArrayQueryParameter("recipient_hla", "STRING", recipient_hla), 
             ],
         )
 
