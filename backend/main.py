@@ -10,7 +10,7 @@ def fetch_bq_epitopes(request):
         headers = {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST",
-            # Added 'Authorization' here to fix browser CORS issues
+            # --- FIX IS HERE: Added 'Authorization' to the allowed list ---
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "3600",
         }
@@ -19,15 +19,12 @@ def fetch_bq_epitopes(request):
     # Set CORS headers for the main request
     headers = {"Access-Control-Allow-Origin": "*"}
 
-    # Attempt to parse JSON
+    # Attempt to parse JSON safely
     request_json = request.get_json(silent=True)
 
-    # --- FIX STARTS HERE ---
-    # If the body was empty or not JSON, request_json will be None.
-    # We must stop here to prevent the crash.
+    # Safety check: if body is empty or invalid JSON, stop here
     if request_json is None:
         return ("Bad Request: Request body must be valid JSON.", 400, headers)
-    # --- FIX ENDS HERE ---
 
     # 1. Get both inputs from the request
     input_alleles = request_json.get("input_alleles", [])
