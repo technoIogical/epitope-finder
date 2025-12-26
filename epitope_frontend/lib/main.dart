@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(MyApp());
@@ -13,7 +14,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Epitope Matcher',
+      title: 'Epitope Finder',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       home: EpitopeMatrixPage(),
@@ -178,7 +179,10 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: AppBar(title: Text('HLA Epitope Registry')),
+          appBar: AppBar(
+            centerTitle: true,
+            title: Text('Epitope Finder'),
+          ),
           body: Column(
             children: [
               _buildSearchHeader(),
@@ -202,6 +206,52 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                                 child: Text('Enter antibodies to view matrix.'))
                             : _buildMatrixContent(),
               ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Created By: ',
+                      style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        launchUrl(Uri.parse(
+                            "https://www.linkedin.com/in/rodin-hooshiyar-07036a3a0/"));
+                      },
+                      child: Text(
+                        'Rodin Hooshiyar',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.blue.withValues(alpha: 0.8),
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.blue.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      ' and ',
+                      style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        launchUrl(Uri.parse(
+                            "https://www.linkedin.com/in/manxuan-michael-zhang-014b29237/"));
+                      },
+                      child: Text(
+                        'Manxuan Zhang',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.blue.withValues(alpha: 0.8),
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.blue.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -214,7 +264,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       padding: EdgeInsets.all(16.0),
       color: Colors.grey[100],
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
@@ -222,7 +272,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 TextField(
                   controller: _antibodyController,
                   decoration: InputDecoration(
-                    labelText: 'Recipient Antibodies (Positive Matches)',
+                    labelText: 'Recipient Antibodies',
                     hintText: 'e.g. A*01:01, B*08:01',
                     border: OutlineInputBorder(),
                     filled: true,
@@ -234,7 +284,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 TextField(
                   controller: _recipientHlaController,
                   decoration: InputDecoration(
-                    labelText: 'Recipient HLA (Self Antibody - Marks "S")',
+                    labelText: 'Recipient Typing',
                     hintText: 'e.g. A*02:01',
                     border: OutlineInputBorder(),
                     filled: true,
@@ -246,7 +296,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 TextField(
                   controller: _donorHlaController,
                   decoration: InputDecoration(
-                    labelText: 'Donor HLA (DSA - Marks "D")',
+                    labelText: 'Donor Typing',
                     hintText: 'e.g. B*44:02',
                     border: OutlineInputBorder(),
                     filled: true,
