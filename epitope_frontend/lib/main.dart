@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -9,49 +8,51 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Epitope Matcher',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
+      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       home: EpitopeMatrixPage(),
     );
   }
 }
 
 class EpitopeMatrixPage extends StatefulWidget {
+  const EpitopeMatrixPage({super.key});
+
   @override
   _EpitopeMatrixPageState createState() => _EpitopeMatrixPageState();
 }
 
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   final TextEditingController _antibodyController = TextEditingController();
-  final TextEditingController _recipientHlaController = TextEditingController(); 
-  final TextEditingController _donorHlaController = TextEditingController();     
-  
+  final TextEditingController _recipientHlaController = TextEditingController();
+  final TextEditingController _donorHlaController = TextEditingController();
+
   final ScrollController _horizontalScrollController = ScrollController();
   final ScrollController _verticalScrollController = ScrollController();
 
   List<Map<String, dynamic>> _epitopeResults = [];
-  List<String> _sortedColumns = []; 
-  Set<String> _userAllelesSet = {}; 
-  
+  List<String> _sortedColumns = [];
+  Set<String> _userAllelesSet = {};
+
   Set<String> _recipientHlaSet = {};
   Set<String> _donorHlaSet = {};
-  
+
   bool _isLoading = false;
   String _errorMessage = '';
 
   // Use the updated server URL
-  final String apiUrl = 'https://epitope-server-998762220496.europe-west1.run.app';
+  final String apiUrl =
+      'https://epitope-server-998762220496.europe-west1.run.app';
 
-  double _zoomLevel = 1.0; 
-  final double baseCellWidth = 28.0; 
-  final double baseCellHeight = 28.0; 
+  double _zoomLevel = 1.0;
+  final double baseCellWidth = 28.0;
+  final double baseCellHeight = 28.0;
   final double baseHeaderHeight = 140.0;
 
   double get currentCellWidth => baseCellWidth * _zoomLevel;
@@ -66,7 +67,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   }
 
   List<String> _parseInput(String input) {
-    return input.split(',')
+    return input
+        .split(',')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
@@ -102,23 +104,22 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         Uri.parse(apiUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer PASTE_YOUR_LONG_TOKEN_HERE', 
+          'Authorization': 'Bearer PASTE_YOUR_LONG_TOKEN_HERE',
         },
         body: jsonEncode({
-          'input_alleles': parsedAntibodies, 
+          'input_alleles': parsedAntibodies,
           'recipient_hla': parsedRecipientHla,
         }),
       );
 
       if (response.statusCode == 200) {
         final List<dynamic> rawRows = jsonDecode(response.body);
-        
-        List<Map<String, dynamic>> processedRows = rawRows
-            .map((e) => e as Map<String, dynamic>)
-            .toList();
+
+        List<Map<String, dynamic>> processedRows =
+            rawRows.map((e) => e as Map<String, dynamic>).toList();
 
         if (processedRows.isEmpty) {
-           setState(() {
+          setState(() {
             _isLoading = false;
             _errorMessage = "No antibody matches found.";
           });
@@ -130,10 +131,12 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
         Set<String> negativeColSet = {};
         for (var row in processedRows) {
-          final missing = List<String>.from(row['Missing Required Alleles'] ?? []);
+          final missing = List<String>.from(
+            row['Missing Required Alleles'] ?? [],
+          );
           negativeColSet.addAll(missing);
         }
-        
+
         negativeColSet.removeAll(_userAllelesSet);
         List<String> negativeCols = negativeColSet.toList()..sort();
 
@@ -161,33 +164,42 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.equal, control: true): () => _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.add, control: true): () => _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.minus, control: true): () => _updateZoom(-0.1),
-        const SingleActivator(LogicalKeyboardKey.equal, alt: true): () => _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.minus, alt: true): () => _updateZoom(-0.1),
+        const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
+            _updateZoom(0.1),
+        const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
+            _updateZoom(0.1),
+        const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
+            _updateZoom(-0.1),
+        const SingleActivator(LogicalKeyboardKey.equal, alt: true): () =>
+            _updateZoom(0.1),
+        const SingleActivator(LogicalKeyboardKey.minus, alt: true): () =>
+            _updateZoom(-0.1),
       },
       child: Focus(
-        autofocus: true, 
+        autofocus: true,
         child: Scaffold(
           appBar: AppBar(title: Text('HLA Epitope Registry')),
           body: Column(
             children: [
               _buildSearchHeader(),
-              
               if (_epitopeResults.isNotEmpty) ...[
-                 _buildLegend(),
-                 _buildZoomControl(), 
-                 Divider(height: 1),
+                _buildLegend(),
+                _buildZoomControl(),
+                Divider(height: 1),
               ],
-              
               Expanded(
                 child: _isLoading
                     ? Center(child: CircularProgressIndicator())
                     : _errorMessage.isNotEmpty
-                        ? Center(child: Text(_errorMessage, style: TextStyle(color: Colors.red)))
+                        ? Center(
+                            child: Text(
+                              _errorMessage,
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          )
                         : _epitopeResults.isEmpty
-                            ? Center(child: Text('Enter antibodies to view matrix.'))
+                            ? Center(
+                                child: Text('Enter antibodies to view matrix.'))
                             : _buildMatrixContent(),
               ),
             ],
@@ -213,7 +225,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     labelText: 'Recipient Antibodies (Positive Matches)',
                     hintText: 'e.g. A*01:01, B*08:01',
                     border: OutlineInputBorder(),
-                    filled: true, fillColor: Colors.white, isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
                   ),
                 ),
                 SizedBox(height: 8),
@@ -223,7 +237,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     labelText: 'Recipient HLA (Self Antibody - Marks "S")',
                     hintText: 'e.g. A*02:01',
                     border: OutlineInputBorder(),
-                    filled: true, fillColor: Colors.blue[50], isDense: true,
+                    filled: true,
+                    fillColor: Colors.blue[50],
+                    isDense: true,
                   ),
                 ),
                 SizedBox(height: 8),
@@ -233,7 +249,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     labelText: 'Donor HLA (DSA - Marks "D")',
                     hintText: 'e.g. B*44:02',
                     border: OutlineInputBorder(),
-                    filled: true, fillColor: Colors.orange[50], isDense: true,
+                    filled: true,
+                    fillColor: Colors.orange[50],
+                    isDense: true,
                   ),
                 ),
               ],
@@ -241,13 +259,15 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           ),
           SizedBox(width: 12),
           SizedBox(
-            height: 160, 
+            height: 160,
             child: ElevatedButton.icon(
               onPressed: () => fetchData(),
               icon: Icon(Icons.search),
               label: Text('Analyze'),
               style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -263,22 +283,35 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         spacing: 16,
         runSpacing: 8,
         children: [
+          Text("Key: "),
           _legendItem(Colors.green.shade600, "Positive Match"),
           _legendItem(Colors.red.shade600, "Missing Required"),
-          Row(children: [
-            Text("S ", style: TextStyle(fontWeight: FontWeight.bold)),
-            Text("= Self Antibody"),
-          ]),
-          Row(children: [
-            Text("D ", style: TextStyle(fontWeight: FontWeight.bold)),
-            Text("= DSA"),
-          ]),
-          Row(children: [
-             Container(width: 12, height: 12, color: Colors.pink[100], 
-               child: Center(child: Text("Name", style: TextStyle(fontSize: 8)))),
-             SizedBox(width: 4),
-             Text("= Highlighted (Row has Self or DSA)"),
-          ]),
+          Row(
+            children: [
+              Text("S ", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("= Self Antibody"),
+            ],
+          ),
+          Row(
+            children: [
+              Text("D ", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("= DSA"),
+            ],
+          ),
+          Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                color: Colors.pink[100],
+                child: Center(
+                  child: Text("Name", style: TextStyle(fontSize: 8)),
+                ),
+              ),
+              SizedBox(width: 4),
+              Text("= Highlighted (Row has Self or DSA)"),
+            ],
+          ),
         ],
       ),
     );
@@ -297,7 +330,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildMatrixContent() {
     const double nameWidth = 100;
     const double countWidth = 50;
-    double totalWidth = nameWidth + (countWidth * 2) + (_sortedColumns.length * currentCellWidth);
+    double totalWidth = nameWidth +
+        (countWidth * 2) +
+        (_sortedColumns.length * currentCellWidth);
 
     return Scrollbar(
       controller: _horizontalScrollController,
@@ -314,6 +349,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               Expanded(
                 child: ListView.builder(
                   controller: _verticalScrollController,
+                  padding: EdgeInsets.only(bottom: 15.0),
                   itemCount: _epitopeResults.length,
                   itemExtent: currentCellHeight,
                   itemBuilder: (context, index) {
@@ -343,42 +379,49 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           _fixedCell('Pos', countW, isHeader: true, textColor: Colors.green),
           _fixedCell('Neg', countW, isHeader: true, textColor: Colors.red),
           ..._sortedColumns.map((allele) {
-             bool isUserAllele = _userAllelesSet.contains(allele);
-             return Container(
-               width: currentCellWidth,
-               decoration: BoxDecoration(
-                 border: Border(right: BorderSide(color: Colors.grey.shade300)),
-               ),
-               child: RotatedBox(
-                 quarterTurns: 3, 
-                 child: Container(
-                   alignment: Alignment.centerLeft,
-                   padding: EdgeInsets.symmetric(horizontal: 4),
-                   child: Text(
-                     allele,
-                     style: TextStyle(
-                       fontSize: currentFontSize,
-                       fontWeight: isUserAllele ? FontWeight.bold : FontWeight.normal,
-                       color: isUserAllele ? Colors.black : Colors.grey[700],
-                     ),
-                   ),
-                 ),
-               ),
-             );
+            bool isUserAllele = _userAllelesSet.contains(allele);
+            return Container(
+              width: currentCellWidth,
+              decoration: BoxDecoration(
+                border: Border(right: BorderSide(color: Colors.grey.shade300)),
+              ),
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    allele,
+                    style: TextStyle(
+                      fontSize: currentFontSize,
+                      fontWeight:
+                          isUserAllele ? FontWeight.bold : FontWeight.normal,
+                      color: isUserAllele ? Colors.black : Colors.grey[700],
+                    ),
+                  ),
+                ),
+              ),
+            );
           }),
         ],
       ),
     );
   }
 
-  Widget _buildHighPerformanceRow(Map<String, dynamic> row, double nameW, double countW) {
+  Widget _buildHighPerformanceRow(
+    Map<String, dynamic> row,
+    double nameW,
+    double countW,
+  ) {
     final positiveMatches = Set<String>.from(row['Positive Matches'] ?? []);
-    final missingRequired = Set<String>.from(row['Missing Required Alleles'] ?? []);
+    final missingRequired = Set<String>.from(
+      row['Missing Required Alleles'] ?? [],
+    );
     final allAlleles = List<String>.from(row['All_Epitope_Alleles'] ?? []);
 
     bool hasS = false;
     bool hasD = false;
-    
+
     for (String allele in allAlleles) {
       if (_recipientHlaSet.contains(allele)) hasS = true;
       if (_donorHlaSet.contains(allele)) hasD = true;
@@ -397,8 +440,10 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         children: [
           _fixedCell(row['Epitope Name'] ?? '', nameW, bgColor: nameBgColor),
           _fixedCell(row['Number of Positive Matches'].toString(), countW),
-          _fixedCell(row['Number of Missing Required Alleles'].toString(), countW),
-          
+          _fixedCell(
+            row['Number of Missing Required Alleles'].toString(),
+            countW,
+          ),
           Expanded(
             child: CustomPaint(
               size: Size.infinite,
@@ -418,15 +463,23 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     );
   }
 
-  Widget _fixedCell(String text, double width, {bool isHeader = false, Color? textColor, Color? bgColor}) {
+  Widget _fixedCell(
+    String text,
+    double width, {
+    bool isHeader = false,
+    Color? textColor,
+    Color? bgColor,
+  }) {
     return Container(
       width: width,
       alignment: Alignment.center,
-      color: bgColor, 
+      color: bgColor,
       padding: EdgeInsets.symmetric(horizontal: 2),
-      decoration: isHeader 
-        ? BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.shade300)))
-        : null,
+      decoration: isHeader
+          ? BoxDecoration(
+              border: Border(right: BorderSide(color: Colors.grey.shade300)),
+            )
+          : null,
       child: Text(
         text,
         style: TextStyle(
@@ -446,9 +499,15 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text("Zoom: ${(_zoomLevel * 100).round()}%", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text(
+            "Zoom: ${(_zoomLevel * 100).round()}%",
+            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+          ),
           SizedBox(width: 8),
-          Icon(Icons.zoom_out, size: 20, color: Colors.grey),
+          IconButton(
+            icon: Icon(Icons.zoom_out, size: 20, color: Colors.grey),
+            onPressed: () => _updateZoom(-0.1),
+          ),
           SizedBox(
             width: 200,
             child: Slider(
@@ -459,7 +518,10 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               onChanged: (value) => setState(() => _zoomLevel = value),
             ),
           ),
-          Icon(Icons.zoom_in, size: 20, color: Colors.grey),
+          IconButton(
+            icon: Icon(Icons.zoom_in, size: 20, color: Colors.grey),
+            onPressed: () => _updateZoom(0.1),
+          ),
         ],
       ),
     );
@@ -527,8 +589,12 @@ class HeatmapRowPainter extends CustomPainter {
               fontSize: fontSize,
               fontWeight: FontWeight.bold,
               shadows: [
-                Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black45)
-              ]
+                Shadow(
+                  offset: Offset(1, 1),
+                  blurRadius: 2,
+                  color: Colors.black45,
+                ),
+              ],
             ),
           );
           final textPainter = TextPainter(
@@ -536,7 +602,7 @@ class HeatmapRowPainter extends CustomPainter {
             textDirection: TextDirection.ltr,
           );
           textPainter.layout();
-          
+
           final offset = Offset(
             (i * cellWidth) + (cellWidth - textPainter.width) / 2,
             (size.height - textPainter.height) / 2,
@@ -550,8 +616,8 @@ class HeatmapRowPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant HeatmapRowPainter old) {
     return old.columns != columns ||
-           old.recipientSet != recipientSet ||
-           old.donorSet != donorSet ||
-           old.cellWidth != cellWidth;
+        old.recipientSet != recipientSet ||
+        old.donorSet != donorSet ||
+        old.cellWidth != cellWidth;
   }
 }
