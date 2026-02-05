@@ -42,4 +42,4 @@ substitutions:
   _REPO: 'default-repo'
 
 options:
-  logging: CLOUD_LOGGING
+  logging: CLOUD_LOGGING_ONLY
