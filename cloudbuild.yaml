@@ -1,0 +1,45 @@
+steps:
+  # 1. Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:$SHORT_SHA'
+      - '-t'
+      - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:latest'
+      - '.'
+    dir: '$_DIR'
+
+  # 2. Push the Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME'
+
+  # 3. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image'
+      - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:$SHORT_SHA'
+      - '--region'
+      - 'us-west1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+images:
+  - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:$SHORT_SHA'
+  - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:latest'
+
+substitutions:
+  _SERVICE_NAME: 'default-service'
+  _DIR: '.'
+  _REPO: 'default-repo'
+
+options:
+  logging: CLOUD_LOGGING
