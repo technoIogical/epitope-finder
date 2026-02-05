@@ -3,12 +3,13 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '-f'
+      - '$_DIR/Dockerfile'
       - '-t'
       - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:$SHORT_SHA'
       - '-t'
       - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:latest'
-      - '.'
-    dir: '$_DIR'
+      - '$_DIR'
 
   # 2. Push the Docker image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'

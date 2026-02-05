@@ -123,3 +123,25 @@ When creating rules, you will see these fields in the Google Cloud Console:
 | `_SERVICE_NAME` | `epitope-backend` | `epitope-frontend` |
 | `_DIR` | `backend` | `epitope_frontend` |
 | `_REPO` | `backend-repo` | `frontend-repo` |
+
+---
+
+## 4. Custom Domain Mappings & URL Stability
+
+### URL Stability
+As long as the service name in `cloudbuild.yaml` (defined by the `_SERVICE_NAME` substitution variable in your triggers) remains the same, the default Google-provided URL (`*.a.run.app`) will **NOT** change. This ensures that your frontend can reliably point to your backend without needing frequent updates.
+
+### Mapping a Custom Domain
+If you want to use a professional domain (e.g., `api.yourdomain.com`), follow these steps in the Google Cloud Console:
+
+1. In the search bar, type **Cloud Run** and select it.
+2. Click on **MANAGE CUSTOM DOMAINS** in the top toolbar.
+3. Click **ADD MAPPING**.
+4. **Select the service**: Choose the service you want to map (e.g., `epitope-frontend` or `epitope-backend`).
+5. **Select or enter the domain**: Select a domain already verified in your Google Search Console or enter a new one.
+6. Click **CONTINUE**.
+7. **Update DNS Records**: Google Cloud will provide specific DNS records (typically **CNAME** or **A** records).
+    - Log in to your domain registrar (e.g., Google Domains, GoDaddy, Namecheap).
+    - Navigate to the DNS management section.
+    - Add or update the records as specified by Google Cloud.
+8. Wait for propagation. It can take anywhere from a few minutes to 24 hours for the new domain to point to your Cloud Run service.
