@@ -13,7 +13,7 @@ RUN flutter build web --release
 
 FROM nginx:stable-alpine
 COPY --from=build-env /app/build/web /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
-EXPOSE 8080
-CMD ["nginx", "-g", "daemon off;"]
+ENV PORT=8080
+CMD ["/bin/sh", "-c", "envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
