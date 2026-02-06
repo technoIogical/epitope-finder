@@ -26,11 +26,15 @@ class EpitopeMatrixPage extends StatefulWidget {
   const EpitopeMatrixPage({super.key});
 
   @override
-  _EpitopeMatrixPageState createState() => _EpitopeMatrixPageState();
+  State<EpitopeMatrixPage> createState() => _EpitopeMatrixPageState();
 }
 
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   final TextEditingController _antibodyController = TextEditingController();
+  final FocusNode _antibodyFocusNode = FocusNode();
+  bool _isWarmedUp = false;
+  bool _isWarming = false;
+
   final TextEditingController _recipientHlaController = TextEditingController();
   final TextEditingController _donorHlaController = TextEditingController();
 
@@ -50,20 +54,18 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   // Use the updated server URL
   final String apiUrl = 'https://api.epitopefinder.dpdns.org';
 
-  double _zoomLevel = 1.0;
+  final ValueNotifier<double> _zoomLevel = ValueNotifier<double>(1.0);
   final double baseCellWidth = 28.0;
   final double baseCellHeight = 28.0;
   final double baseHeaderHeight = 140.0;
 
-  double get currentCellWidth => baseCellWidth * _zoomLevel;
-  double get currentCellHeight => baseCellHeight * _zoomLevel;
-  double get currentHeaderHeight => baseHeaderHeight * _zoomLevel;
-  double get currentFontSize => 12.0 * _zoomLevel;
+  double get currentCellWidth => baseCellWidth * _zoomLevel.value;
+  double get currentCellHeight => baseCellHeight * _zoomLevel.value;
+  double get currentHeaderHeight => baseHeaderHeight * _zoomLevel.value;
+  double get currentFontSize => 12.0 * _zoomLevel.value;
 
   void _updateZoom(double change) {
-    setState(() {
-      _zoomLevel = (_zoomLevel + change).clamp(0.5, 3.0);
-    });
+    _zoomLevel.value = (_zoomLevel.value + change).clamp(0.5, 3.0);
   }
 
   List<String> _parseInput(String input) {
@@ -72,6 +74,48 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _antibodyFocusNode.addListener(_onAntibodyFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _antibodyFocusNode.removeListener(_onAntibodyFocusChange);
+    _antibodyFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onAntibodyFocusChange() {
+    if (_antibodyFocusNode.hasFocus && !_isWarmedUp) {
+      _preWarmBackend();
+    }
+  }
+
+  Future<void> _preWarmBackend() async {
+    if (_isWarmedUp) return;
+    _isWarmedUp = true;
+    if (mounted) {
+      setState(() {
+        _isWarming = true;
+      });
+    }
+    try {
+      await http
+          .get(Uri.parse('$apiUrl/warmup'))
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('Pre-warm failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isWarming = false;
+        });
+      }
+    }
   }
 
   Future<void> fetchData() async {
@@ -115,10 +159,10 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       if (response.statusCode == 200) {
         final List<dynamic> rawRows = jsonDecode(response.body);
 
-        List<Map<String, dynamic>> processedRows =
+        List<Map<String, dynamic>> rawProcessedRows =
             rawRows.map((e) => e as Map<String, dynamic>).toList();
 
-        if (processedRows.isEmpty) {
+        if (rawProcessedRows.isEmpty) {
           setState(() {
             _isLoading = false;
             _errorMessage = "No antibody matches found.";
@@ -130,11 +174,34 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         _userAllelesSet = parsedAntibodies.toSet();
 
         Set<String> negativeColSet = {};
-        for (var row in processedRows) {
+        List<Map<String, dynamic>> processedRows = [];
+
+        for (var row in rawProcessedRows) {
           final missing = List<String>.from(
             row['Missing Required Alleles'] ?? [],
           );
           negativeColSet.addAll(missing);
+
+          // Pre-calculate flags
+          final allAlleles =
+              List<String>.from(row['All_Epitope_Alleles'] ?? []);
+          bool hasS = false;
+          bool hasD = false;
+
+          for (String allele in allAlleles) {
+            if (_recipientHlaSet.contains(allele)) hasS = true;
+            if (_donorHlaSet.contains(allele)) hasD = true;
+          }
+
+          processedRows.add({
+            ...row,
+            'cached_hasS': hasS,
+            'cached_hasD': hasD,
+            'cached_highlightRow': hasS || hasD,
+            'cached_positiveMatchesSet':
+                Set<String>.from(row['Positive Matches'] ?? []),
+            'cached_missingRequiredSet': Set<String>.from(missing),
+          });
         }
 
         negativeColSet.removeAll(_userAllelesSet);
@@ -162,99 +229,107 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
-            _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
-            _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
-            _updateZoom(-0.1),
-        const SingleActivator(LogicalKeyboardKey.equal, alt: true): () =>
-            _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.minus, alt: true): () =>
-            _updateZoom(-0.1),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          appBar: AppBar(
-            centerTitle: true,
-            title: Text('Epitope Finder'),
-          ),
-          body: Column(
-            children: [
-              _buildSearchHeader(),
-              if (_epitopeResults.isNotEmpty) ...[
-                _buildLegend(),
-                _buildZoomControl(),
-                Divider(height: 1),
-              ],
-              Expanded(
-                child: _isLoading
-                    ? Center(child: CircularProgressIndicator())
-                    : _errorMessage.isNotEmpty
-                        ? Center(
-                            child: Text(
-                              _errorMessage,
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          )
-                        : _epitopeResults.isEmpty
-                            ? Center(
-                                child: Text('Enter antibodies to view matrix.'))
-                            : _buildMatrixContent(),
+    return ValueListenableBuilder<double>(
+      valueListenable: _zoomLevel,
+      builder: (context, zoom, child) {
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.equal, control: true):
+                () => _updateZoom(0.1),
+            const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
+                _updateZoom(0.1),
+            const SingleActivator(LogicalKeyboardKey.minus, control: true):
+                () => _updateZoom(-0.1),
+            const SingleActivator(LogicalKeyboardKey.equal, alt: true): () =>
+                _updateZoom(0.1),
+            const SingleActivator(LogicalKeyboardKey.minus, alt: true): () =>
+                _updateZoom(-0.1),
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              appBar: AppBar(
+                centerTitle: true,
+                title: Text('Epitope Finder'),
               ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Created By: ',
-                      style: TextStyle(fontSize: 12.5, color: Colors.grey),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        launchUrl(Uri.parse(
-                            "https://www.linkedin.com/in/rodin-hooshiyar-07036a3a0/"));
-                      },
-                      child: Text(
-                        'Rodin Hooshiyar',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Colors.blue.withValues(alpha: 0.8),
-                          decoration: TextDecoration.underline,
-                          decorationColor: Colors.blue.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
-                    Text(
-                      ' and ',
-                      style: TextStyle(fontSize: 12.5, color: Colors.grey),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        launchUrl(Uri.parse(
-                            "https://www.linkedin.com/in/manxuan-michael-zhang-014b29237/"));
-                      },
-                      child: Text(
-                        'Manxuan Zhang',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Colors.blue.withValues(alpha: 0.8),
-                          decoration: TextDecoration.underline,
-                          decorationColor: Colors.blue.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
+              body: Column(
+                children: [
+                  _buildSearchHeader(),
+                  if (_epitopeResults.isNotEmpty) ...[
+                    _buildLegend(),
+                    _buildZoomControl(),
+                    Divider(height: 1),
                   ],
-                ),
+                  Expanded(
+                    child: _isLoading
+                        ? Center(child: CircularProgressIndicator())
+                        : _errorMessage.isNotEmpty
+                            ? Center(
+                                child: Text(
+                                  _errorMessage,
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              )
+                            : _epitopeResults.isEmpty
+                                ? Center(
+                                    child: Text(
+                                        'Enter antibodies to view matrix.'))
+                                : _buildMatrixContent(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Created By: ',
+                          style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                        ),
+                        InkWell(
+                          onTap: () {
+                            launchUrl(Uri.parse(
+                                "https://www.linkedin.com/in/rodin-hooshiyar-07036a3a0/"));
+                          },
+                          child: Text(
+                            'Rodin Hooshiyar',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.blue.withValues(alpha: 0.8),
+                              decoration: TextDecoration.underline,
+                              decorationColor:
+                                  Colors.blue.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' and ',
+                          style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                        ),
+                        InkWell(
+                          onTap: () {
+                            launchUrl(Uri.parse(
+                                "https://www.linkedin.com/in/manxuan-michael-zhang-014b29237/"));
+                          },
+                          child: Text(
+                            'Manxuan Zhang',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.blue.withValues(alpha: 0.8),
+                              decoration: TextDecoration.underline,
+                              decorationColor:
+                                  Colors.blue.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -270,8 +345,19 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               children: [
                 TextField(
                   controller: _antibodyController,
+                  focusNode: _antibodyFocusNode,
                   decoration: InputDecoration(
                     labelText: 'Recipient Antibodies',
+                    suffixIcon: _isWarming
+                        ? const Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
                     hintText: 'e.g. A*01:01, B*08:01',
                     border: OutlineInputBorder(),
                     filled: true,
@@ -387,32 +473,37 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       controller: _horizontalScrollController,
       thumbVisibility: true,
       trackVisibility: true,
-      child: SingleChildScrollView(
-        controller: _horizontalScrollController,
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: totalWidth,
-          child: Column(
-            children: [
-              _buildHeaderRow(nameWidth, countWidth),
-              Expanded(
-                child: ListView.builder(
-                  controller: _verticalScrollController,
-                  padding: EdgeInsets.only(bottom: 15.0),
-                  itemCount: _epitopeResults.length,
-                  itemExtent: currentCellHeight,
-                  itemBuilder: (context, index) {
-                    return _buildHighPerformanceRow(
-                      _epitopeResults[index],
-                      nameWidth,
-                      countWidth,
-                    );
-                  },
-                ),
+      child: ListenableBuilder(
+        listenable: _horizontalScrollController,
+        builder: (context, child) {
+          return SingleChildScrollView(
+            controller: _horizontalScrollController,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: totalWidth,
+              child: Column(
+                children: [
+                  _buildHeaderRow(nameWidth, countWidth),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _verticalScrollController,
+                      padding: EdgeInsets.only(bottom: 15.0),
+                      itemCount: _epitopeResults.length,
+                      itemExtent: currentCellHeight,
+                      itemBuilder: (context, index) {
+                        return _buildHighPerformanceRow(
+                          _epitopeResults[index],
+                          nameWidth,
+                          countWidth,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -462,22 +553,19 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     double nameW,
     double countW,
   ) {
-    final positiveMatches = Set<String>.from(row['Positive Matches'] ?? []);
-    final missingRequired = Set<String>.from(
-      row['Missing Required Alleles'] ?? [],
-    );
-    final allAlleles = List<String>.from(row['All_Epitope_Alleles'] ?? []);
+    final bool highlightRow = row['cached_highlightRow'] ?? false;
+    final Color nameBgColor =
+        highlightRow ? Colors.pink.shade100 : Colors.white;
 
-    bool hasS = false;
-    bool hasD = false;
-
-    for (String allele in allAlleles) {
-      if (_recipientHlaSet.contains(allele)) hasS = true;
-      if (_donorHlaSet.contains(allele)) hasD = true;
+    // Use horizontal scroll offset to calculate visible range
+    double scrollOffset = 0;
+    if (_horizontalScrollController.hasClients) {
+      scrollOffset = _horizontalScrollController.offset;
     }
 
-    bool highlightRow = hasS || hasD;
-    Color nameBgColor = highlightRow ? Colors.pink.shade100 : Colors.white;
+    // Offset of the CustomPaint widget relative to the start of the scrollable content
+    // The CustomPaint starts after nameW + countW * 2
+    final double heatmapStartX = nameW + (countW * 2);
 
     return Container(
       height: currentCellHeight,
@@ -498,12 +586,14 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               size: Size.infinite,
               painter: HeatmapRowPainter(
                 columns: _sortedColumns,
-                positiveMatches: positiveMatches,
-                missingRequired: missingRequired,
+                positiveMatches: row['cached_positiveMatchesSet'] ?? <String>{},
+                missingRequired: row['cached_missingRequiredSet'] ?? <String>{},
                 cellWidth: currentCellWidth,
                 recipientSet: _recipientHlaSet,
                 donorSet: _donorHlaSet,
                 fontSize: currentFontSize,
+                scrollOffset: scrollOffset,
+                heatmapStartX: heatmapStartX,
               ),
             ),
           ),
@@ -549,7 +639,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Text(
-            "Zoom: ${(_zoomLevel * 100).round()}%",
+            "Zoom: ${(_zoomLevel.value * 100).round()}%",
             style: TextStyle(color: Colors.grey[600], fontSize: 12),
           ),
           SizedBox(width: 8),
@@ -560,11 +650,11 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           SizedBox(
             width: 200,
             child: Slider(
-              value: _zoomLevel,
+              value: _zoomLevel.value,
               min: 0.5,
               max: 3.0,
               divisions: 25,
-              onChanged: (value) => setState(() => _zoomLevel = value),
+              onChanged: (value) => _zoomLevel.value = value,
             ),
           ),
           IconButton(
@@ -585,6 +675,8 @@ class HeatmapRowPainter extends CustomPainter {
   final Set<String> recipientSet;
   final Set<String> donorSet;
   final double fontSize;
+  final double scrollOffset;
+  final double heatmapStartX;
 
   HeatmapRowPainter({
     required this.columns,
@@ -594,6 +686,8 @@ class HeatmapRowPainter extends CustomPainter {
     required this.recipientSet,
     required this.donorSet,
     required this.fontSize,
+    required this.scrollOffset,
+    required this.heatmapStartX,
   });
 
   @override
@@ -604,7 +698,14 @@ class HeatmapRowPainter extends CustomPainter {
       ..strokeWidth = 0.5
       ..style = PaintingStyle.stroke;
 
-    for (int i = 0; i < columns.length; i++) {
+    // Calculate visible range in terms of column indices
+    final double viewportStart = scrollOffset - heatmapStartX;
+    final double viewportEnd = viewportStart + size.width;
+
+    int startIdx = (viewportStart / cellWidth).floor().clamp(0, columns.length);
+    int endIdx = (viewportEnd / cellWidth).ceil().clamp(0, columns.length);
+
+    for (int i = startIdx; i < endIdx; i++) {
       String allele = columns[i];
       bool isPositive = positiveMatches.contains(allele);
       bool isMissing = missingRequired.contains(allele);
@@ -667,6 +768,8 @@ class HeatmapRowPainter extends CustomPainter {
     return old.columns != columns ||
         old.recipientSet != recipientSet ||
         old.donorSet != donorSet ||
-        old.cellWidth != cellWidth;
+        old.cellWidth != cellWidth ||
+        old.scrollOffset != scrollOffset ||
+        old.fontSize != fontSize;
   }
 }
