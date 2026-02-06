@@ -85,13 +85,21 @@ def fetch_bq_epitopes(request):
     if request.method == "OPTIONS":
         headers = {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST",
+            "Access-Control-Allow-Methods": "POST, GET",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "3600",
         }
         return ("", 204, headers)
 
     headers = {"Access-Control-Allow-Origin": "*"}
+
+    # Handle /warmup path or GET request
+    if request.path.endswith('/warmup') or request.method == 'GET':
+        try:
+            load_epitope_data()
+            return ({"status": "ready"}, 200, headers)
+        except Exception as e:
+            return (f"Internal Server Error: {str(e)}", 500, headers)
 
     request_json = request.get_json(silent=True)
     if request_json is None:
@@ -112,20 +120,3 @@ def fetch_bq_epitopes(request):
 
     return (results, 200, headers)
 
-@functions_framework.http
-def warmup(request):
-    if request.method == "OPTIONS":
-        headers = {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Max-Age": "3600",
-        }
-        return ("", 204, headers)
-
-    headers = {"Access-Control-Allow-Origin": "*"}
-    try:
-        load_epitope_data()
-        return ({"status": "warmed"}, 200, headers)
-    except Exception as e:
-        return (f"Internal Server Error: {str(e)}", 500, headers)

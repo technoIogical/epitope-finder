@@ -4,8 +4,9 @@ FROM ghcr.io/cirruslabs/flutter:stable AS build-env
 
 WORKDIR /app
 COPY . .
+ARG VERSION
 # No git clone or doctor needed; the image already has it
-RUN flutter build web --release
+RUN flutter build web --release --dart-define=APP_VERSION=$VERSION
 
 FROM nginx:stable-alpine
 COPY --from=build-env /app/build/web /usr/share/nginx/html

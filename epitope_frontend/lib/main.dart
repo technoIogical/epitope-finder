@@ -30,6 +30,8 @@ class EpitopeMatrixPage extends StatefulWidget {
 }
 
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
+  final String _appVersion =
+      const String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
   final TextEditingController _antibodyController = TextEditingController();
   final FocusNode _antibodyFocusNode = FocusNode();
   bool _isWarmedUp = false;
@@ -322,6 +324,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0, right: 16.0),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'v$_appVersion',
+                        style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                      ),
                     ),
                   ),
                 ],

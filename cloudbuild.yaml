@@ -16,6 +16,7 @@ steps:
       - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:$SHORT_SHA'
       - '-t'
       - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:latest'
+      - '--build-arg=VERSION=$SHORT_SHA'
       - '--cache-from'
       - 'us-west1-docker.pkg.dev/$PROJECT_ID/$_REPO/$_SERVICE_NAME:latest'
       - '$_DIR'
