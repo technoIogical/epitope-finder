@@ -145,3 +145,25 @@ If you want to use a professional domain (e.g., `api.yourdomain.com`), follow th
     - Navigate to the DNS management section.
     - Add or update the records as specified by Google Cloud.
 8. Wait for propagation. It can take anywhere from a few minutes to 24 hours for the new domain to point to your Cloud Run service.
+
+---
+
+## 5. Troubleshooting: "Authentication Required" (403 Forbidden)
+
+If you encounter a "403 Forbidden" or "Authentication Required" error when accessing your Cloud Run service, it means the service is not allowing public access. Even if your deployment command includes the `--allow-unauthenticated` flag, sometimes an existing service needs its IAM permissions updated manually in the Google Cloud Console.
+
+### Allowing Public Access (UI Guide)
+
+1. In the search bar, type **Cloud Run** and select it.
+2. Click on the name of your service (e.g., `epitope-backend`).
+3. Click the **Security** tab.
+4. Under **Authentication**, ensure **"Allow unauthenticated invocations"** is selected.
+
+#### Alternative: Manual IAM Permission Update
+If the above does not resolve the issue, you can manually add the permission:
+
+1. Go to the **Permissions** tab for the service.
+2. Click **ADD PRINCIPAL**.
+3. In the **New principals** field, type **`allUsers`**.
+4. In the **Select a role** field, search for and select **`Cloud Run Invoker`**.
+5. Click **SAVE**.

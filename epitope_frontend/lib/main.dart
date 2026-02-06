@@ -48,7 +48,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   String _errorMessage = '';
 
   // Use the updated server URL
-  final String apiUrl = 'https://epitope-server-998762220496.us-west1.run.app';
+  final String apiUrl = 'https://api.epitopefinder.dpdns.org';
 
   double _zoomLevel = 1.0;
   final double baseCellWidth = 28.0;
