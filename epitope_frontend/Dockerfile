@@ -1,14 +1,10 @@
-FROM debian:latest AS build-env
-
-RUN apt-get update && apt-get install -y curl git unzip
-
-RUN git clone https://github.com/flutter/flutter.git /usr/local/flutter
-ENV PATH="/usr/local/flutter/bin:/usr/local/flutter/bin/cache/dart-sdk/bin:${PATH}"
-RUN flutter doctor
-RUN flutter config --enable-web
+# Step 1: Use a pre-baked Flutter image instead of Debian
+# You can find community ones or build your own once and host in your Registry
+FROM ghcr.io/cirruslabs/flutter:stable AS build-env
 
 WORKDIR /app
 COPY . .
+# No git clone or doctor needed; the image already has it
 RUN flutter build web --release
 
 FROM nginx:stable-alpine
