@@ -40,7 +40,5 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
 
-# Use a specific machine type to speed up Flutter builds (Saves build-minute costs)
 options:
-  machineType: 'E2_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY
