@@ -1,14 +1,13 @@
 import functions_framework
 from google.cloud import bigquery
 import os
-import asyncio
 import json
 
 EPITOPE_DATA = None
 ALLELE_CACHE = None
 PROJECT_ID = "epitopefinder-458404"
 
-async def load_epitope_data():
+def load_epitope_data():
     global EPITOPE_DATA, ALLELE_CACHE
     if EPITOPE_DATA is not None and ALLELE_CACHE is not None:
         return EPITOPE_DATA
@@ -31,8 +30,8 @@ async def load_epitope_data():
             """
             query_job = client.query(query)
             
-            loop = asyncio.get_running_loop()
-            rows = await loop.run_in_executor(None, lambda: list(query_job.result()))
+            # Synchronous execution
+            rows = list(query_job.result())
             
             EPITOPE_DATA = [dict(row) for row in rows]
             print(f"Successfully loaded {len(EPITOPE_DATA)} epitope rows.")
@@ -47,8 +46,8 @@ async def load_epitope_data():
             query = "SELECT allele_name FROM `epitopefinder-458404`.epitopes.allele_list ORDER BY allele_name"
             query_job = client.query(query)
             
-            loop = asyncio.get_running_loop()
-            rows = await loop.run_in_executor(None, lambda: list(query_job.result()))
+            # Synchronous execution
+            rows = list(query_job.result())
             
             ALLELE_CACHE = [row["allele_name"] for row in rows]
             print(f"Successfully loaded {len(ALLELE_CACHE)} allele names.")
@@ -110,7 +109,11 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
     return results
 
 @functions_framework.http
-async def fetch_bq_epitopes(request):
+def fetch_bq_epitopes(request):
+    """
+    HTTP Cloud Function that retrieves epitope data from BigQuery (lazily cached),
+    computes matches against input alleles, and returns the sorted results.
+    """
     # Handle CORS preflight request
     if request.method == "OPTIONS":
         headers = {
@@ -127,9 +130,9 @@ async def fetch_bq_epitopes(request):
     }
 
     try:
-        # Ensure cache is populated if empty
+        # Ensure cache is populated if empty (Synchronous call now)
         if EPITOPE_DATA is None or ALLELE_CACHE is None:
-            await load_epitope_data()
+            load_epitope_data()
     except Exception as e:
         print(f"Initialization error: {e}")
         return (json.dumps({"error": f"Internal Server Error: Could not initialize data. {str(e)}"}), 500, headers)
