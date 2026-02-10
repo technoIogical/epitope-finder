@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import 'allele_input.dart';
 
 void main() {
   runApp(MyApp());
@@ -32,16 +33,22 @@ class EpitopeMatrixPage extends StatefulWidget {
 class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   final String _appVersion =
       const String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
-  final TextEditingController _antibodyController = TextEditingController();
+
+  // Allele Autocomplete Data
+  List<String> _allAlleles = [];
+  bool _isAlleleFetchError = false;
+
+  final List<String> _selectedAntibodies = [];
+  final List<String> _selectedRecipientHla = [];
+  final List<String> _selectedDonorHla = [];
+
   final FocusNode _antibodyFocusNode = FocusNode();
   bool _isWarmedUp = false;
   bool _isWarming = false;
 
-  final TextEditingController _recipientHlaController = TextEditingController();
-  final TextEditingController _donorHlaController = TextEditingController();
-
   final ScrollController _horizontalScrollController = ScrollController();
   final ScrollController _verticalScrollController = ScrollController();
+  final ScrollController _stickyVerticalScrollController = ScrollController();
 
   List<Map<String, dynamic>> _epitopeResults = [];
   List<String> _sortedColumns = [];
@@ -66,34 +73,74 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   double get currentHeaderHeight => baseHeaderHeight * _zoomLevel.value;
   double get currentFontSize => 12.0 * _zoomLevel.value;
 
+  // Added for sorting
+  String? _sortColumn;
+  bool _sortAscending = true;
+
   void _updateZoom(double change) {
     _zoomLevel.value = (_zoomLevel.value + change).clamp(0.5, 3.0);
-  }
-
-  List<String> _parseInput(String input) {
-    return input
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
   }
 
   @override
   void initState() {
     super.initState();
     _antibodyFocusNode.addListener(_onAntibodyFocusChange);
+    _fetchAlleles();
+
+    // Sync vertical scroll controllers
+    _verticalScrollController.addListener(() {
+      if (_stickyVerticalScrollController.hasClients &&
+          _stickyVerticalScrollController.offset !=
+              _verticalScrollController.offset) {
+        _stickyVerticalScrollController
+            .jumpTo(_verticalScrollController.offset);
+      }
+    });
+    _stickyVerticalScrollController.addListener(() {
+      if (_verticalScrollController.hasClients &&
+          _verticalScrollController.offset !=
+              _stickyVerticalScrollController.offset) {
+        _verticalScrollController
+            .jumpTo(_stickyVerticalScrollController.offset);
+      }
+    });
   }
 
   @override
   void dispose() {
     _antibodyFocusNode.removeListener(_onAntibodyFocusChange);
     _antibodyFocusNode.dispose();
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
+    _stickyVerticalScrollController.dispose();
     super.dispose();
   }
 
   void _onAntibodyFocusChange() {
     if (_antibodyFocusNode.hasFocus && !_isWarmedUp) {
       _preWarmBackend();
+    }
+  }
+
+  Future<void> _fetchAlleles() async {
+    try {
+      final response = await http.get(Uri.parse('$apiUrl/alleles'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          _allAlleles = data.cast<String>();
+          _isAlleleFetchError = false;
+        });
+      } else {
+        setState(() {
+          _isAlleleFetchError = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching alleles: $e');
+      setState(() {
+        _isAlleleFetchError = true;
+      });
     }
   }
 
@@ -121,20 +168,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   }
 
   Future<void> fetchData() async {
-    String antibodyInput = _antibodyController.text;
-    String recipientInput = _recipientHlaController.text;
-    String donorInput = _donorHlaController.text;
-
     setState(() {
       _isLoading = true;
       _errorMessage = '';
       _epitopeResults = [];
       _sortedColumns = [];
-      _recipientHlaSet = _parseInput(recipientInput).toSet();
-      _donorHlaSet = _parseInput(donorInput).toSet();
+      _recipientHlaSet = _selectedRecipientHla.toSet();
+      _donorHlaSet = _selectedDonorHla.toSet();
     });
 
-    if (antibodyInput.isEmpty) {
+    if (_selectedAntibodies.isEmpty) {
       setState(() {
         _errorMessage = 'Please enter Recipient Antibodies.';
         _isLoading = false;
@@ -143,9 +186,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     }
 
     try {
-      final List<String> parsedAntibodies = _parseInput(antibodyInput);
-      final List<String> parsedRecipientHla = _parseInput(recipientInput);
-
       final response = await http.post(
         Uri.parse(apiUrl),
         headers: {
@@ -153,8 +193,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           'Authorization': 'Bearer PASTE_YOUR_LONG_TOKEN_HERE',
         },
         body: jsonEncode({
-          'input_alleles': parsedAntibodies,
-          'recipient_hla': parsedRecipientHla,
+          'input_alleles': _selectedAntibodies,
+          'recipient_hla': _selectedRecipientHla,
         }),
       );
 
@@ -172,8 +212,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           return;
         }
 
-        List<String> positiveCols = List.from(parsedAntibodies)..sort();
-        _userAllelesSet = parsedAntibodies.toSet();
+        List<String> positiveCols = List.from(_selectedAntibodies)..sort();
+        _userAllelesSet = _selectedAntibodies.toSet();
 
         Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
@@ -212,6 +252,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         setState(() {
           _epitopeResults = processedRows;
           _sortedColumns = [...positiveCols, ...negativeCols];
+          _sortColumn = null;
         });
       } else {
         setState(() {
@@ -227,6 +268,29 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         _isLoading = false;
       });
     }
+  }
+
+  void _sortResults(String column) {
+    setState(() {
+      if (_sortColumn == column) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortColumn = column;
+        _sortAscending = true;
+      }
+
+      _epitopeResults.sort((a, b) {
+        dynamic valA = a[column];
+        dynamic valB = b[column];
+        int cmp;
+        if (valA is num && valB is num) {
+          cmp = valA.compareTo(valB);
+        } else {
+          cmp = valA.toString().compareTo(valB.toString());
+        }
+        return _sortAscending ? cmp : -cmp;
+      });
+    });
   }
 
   @override
@@ -278,64 +342,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                                         'Enter antibodies to view matrix.'))
                                 : _buildMatrixContent(),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Created By: ',
-                          style: TextStyle(fontSize: 12.5, color: Colors.grey),
-                        ),
-                        InkWell(
-                          onTap: () {
-                            launchUrl(Uri.parse(
-                                "https://www.linkedin.com/in/rodin-hooshiyar-07036a3a0/"));
-                          },
-                          child: Text(
-                            'Rodin Hooshiyar',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: Colors.blue.withValues(alpha: 0.8),
-                              decoration: TextDecoration.underline,
-                              decorationColor:
-                                  Colors.blue.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ),
-                        Text(
-                          ' and ',
-                          style: TextStyle(fontSize: 12.5, color: Colors.grey),
-                        ),
-                        InkWell(
-                          onTap: () {
-                            launchUrl(Uri.parse(
-                                "https://www.linkedin.com/in/manxuan-michael-zhang-014b29237/"));
-                          },
-                          child: Text(
-                            'Manxuan Zhang',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: Colors.blue.withValues(alpha: 0.8),
-                              decoration: TextDecoration.underline,
-                              decorationColor:
-                                  Colors.blue.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0, right: 16.0),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        'v$_appVersion',
-                        style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
+                  _buildFooter(),
                 ],
               ),
             ),
@@ -354,61 +361,51 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         children: [
           Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(
-                  controller: _antibodyController,
+                if (_isAlleleFetchError)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Text(
+                      'Warning: Could not load autocomplete data.',
+                      style: TextStyle(color: Colors.red[700], fontSize: 12),
+                    ),
+                  ),
+                AlleleInput(
+                  label: 'Recipient Antibodies',
+                  hintText: 'e.g. A*01:01, B*08:01',
+                  selectedAlleles: _selectedAntibodies,
+                  allAlleles: _allAlleles,
+                  onChanged: () => setState(() {}),
+                  isWarming: _isWarming,
                   focusNode: _antibodyFocusNode,
-                  decoration: InputDecoration(
-                    labelText: 'Recipient Antibodies',
-                    suffixIcon: _isWarming
-                        ? const Padding(
-                            padding: EdgeInsets.all(12.0),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : null,
-                    hintText: 'e.g. A*01:01, B*08:01',
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.white,
-                    isDense: true,
-                  ),
                 ),
-                SizedBox(height: 8),
-                TextField(
-                  controller: _recipientHlaController,
-                  decoration: InputDecoration(
-                    labelText: 'Recipient Typing',
-                    hintText: 'e.g. A*02:01',
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.blue[50],
-                    isDense: true,
-                  ),
+                const SizedBox(height: 8),
+                AlleleInput(
+                  label: 'Recipient Typing',
+                  hintText: 'e.g. A*02:01',
+                  selectedAlleles: _selectedRecipientHla,
+                  allAlleles: _allAlleles,
+                  onChanged: () => setState(() {}),
+                  fillColor: Colors.blue[50],
                 ),
-                SizedBox(height: 8),
-                TextField(
-                  controller: _donorHlaController,
-                  decoration: InputDecoration(
-                    labelText: 'Donor Typing',
-                    hintText: 'e.g. B*44:02',
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.orange[50],
-                    isDense: true,
-                  ),
+                const SizedBox(height: 8),
+                AlleleInput(
+                  label: 'Donor Typing',
+                  hintText: 'e.g. B*44:02',
+                  selectedAlleles: _selectedDonorHla,
+                  allAlleles: _allAlleles,
+                  onChanged: () => setState(() {}),
+                  fillColor: Colors.orange[50],
                 ),
               ],
             ),
           ),
           SizedBox(width: 12),
           SizedBox(
-            height: 160,
+            height: 200, // Adjusted for AlleleInput height
             child: ElevatedButton.icon(
-              onPressed: () => fetchData(),
+              onPressed: fetchData,
               icon: Icon(Icons.search),
               label: Text('Analyze'),
               style: ElevatedButton.styleFrom(
@@ -424,39 +421,55 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   }
 
   Widget _buildLegend() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 8,
+    return Container(
+      margin: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(12.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Key: "),
-          _legendItem(Colors.green.shade600, "Positive Match"),
-          _legendItem(Colors.red.shade600, "Missing Required"),
-          Row(
+          Text("Matrix Legend",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          SizedBox(height: 8),
+          Wrap(
+            spacing: 20,
+            runSpacing: 10,
             children: [
-              Text("S ", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("= Self Antibody"),
-            ],
-          ),
-          Row(
-            children: [
-              Text("D ", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("= DSA"),
-            ],
-          ),
-          Row(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                color: Colors.pink[100],
-                child: Center(
-                  child: Text("Name", style: TextStyle(fontSize: 8)),
-                ),
+              _legendItem(Colors.green.shade600, "Positive Match"),
+              _legendItem(Colors.red.shade600, "Missing Required"),
+              _legendItem(Colors.pink.shade100, "Self/DSA Highlight"),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("S",
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade900)),
+                  SizedBox(width: 4),
+                  Text("= Self HLA", style: TextStyle(fontSize: 12)),
+                ],
               ),
-              SizedBox(width: 4),
-              Text("= Highlighted (Row has Self or DSA)"),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("D",
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade900)),
+                  SizedBox(width: 4),
+                  Text("= DSA", style: TextStyle(fontSize: 12)),
+                ],
+              ),
             ],
           ),
         ],
@@ -466,6 +479,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   Widget _legendItem(Color color, String text) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(width: 12, height: 12, color: color),
         SizedBox(width: 4),
@@ -477,107 +491,152 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildMatrixContent() {
     const double nameWidth = 100;
     const double countWidth = 50;
-    double totalWidth = nameWidth +
-        (countWidth * 2) +
-        (_sortedColumns.length * currentCellWidth);
+    final double stickyTotalWidth = nameWidth + (countWidth * 2);
 
-    return Scrollbar(
-      controller: _horizontalScrollController,
-      thumbVisibility: true,
-      trackVisibility: true,
-      child: ListenableBuilder(
-        listenable: _horizontalScrollController,
-        builder: (context, child) {
-          return SingleChildScrollView(
+    return Row(
+      children: [
+        // Sticky Columns
+        SizedBox(
+          width: stickyTotalWidth,
+          child: Column(
+            children: [
+              _buildStickyHeader(nameWidth, countWidth),
+              Expanded(
+                child: ListView.builder(
+                  controller: _stickyVerticalScrollController,
+                  padding: EdgeInsets.only(bottom: 15.0),
+                  itemCount: _epitopeResults.length,
+                  itemExtent: currentCellHeight,
+                  itemBuilder: (context, index) {
+                    final row = _epitopeResults[index];
+                    final bool highlightRow =
+                        row['cached_highlightRow'] ?? false;
+                    final Color nameBgColor =
+                        highlightRow ? Colors.pink.shade100 : Colors.white;
+                    return Container(
+                      height: currentCellHeight,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                            bottom: BorderSide(color: Colors.grey.shade300)),
+                      ),
+                      child: Row(
+                        children: [
+                          _fixedCell(row['Epitope Name'] ?? '', nameWidth,
+                              bgColor: nameBgColor),
+                          _fixedCell(
+                              row['Number of Positive Matches'].toString(),
+                              countWidth),
+                          _fixedCell(
+                              row['Number of Missing Required Alleles']
+                                  .toString(),
+                              countWidth),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Scrollable Columns
+        Expanded(
+          child: Scrollbar(
             controller: _horizontalScrollController,
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: totalWidth,
-              child: Column(
-                children: [
-                  _buildHeaderRow(nameWidth, countWidth),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _verticalScrollController,
-                      padding: EdgeInsets.only(bottom: 15.0),
-                      itemCount: _epitopeResults.length,
-                      itemExtent: currentCellHeight,
-                      itemBuilder: (context, index) {
-                        return _buildHighPerformanceRow(
-                          _epitopeResults[index],
-                          nameWidth,
-                          countWidth,
-                        );
-                      },
+            thumbVisibility: true,
+            trackVisibility: true,
+            child: SingleChildScrollView(
+              controller: _horizontalScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: _sortedColumns.length * currentCellWidth,
+                child: Column(
+                  children: [
+                    _buildScrollableHeader(),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _verticalScrollController,
+                        padding: EdgeInsets.only(bottom: 15.0),
+                        itemCount: _epitopeResults.length,
+                        itemExtent: currentCellHeight,
+                        itemBuilder: (context, index) {
+                          return _buildScrollableRow(_epitopeResults[index]);
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildHeaderRow(double nameW, double countW) {
+  Widget _buildStickyHeader(double nameW, double countW) {
     return Container(
       height: currentHeaderHeight,
       color: Colors.grey[200],
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _fixedCell('Epitope', nameW, isHeader: true),
-          _fixedCell('Pos', countW, isHeader: true, textColor: Colors.green),
-          _fixedCell('Neg', countW, isHeader: true, textColor: Colors.red),
-          ..._sortedColumns.map((allele) {
-            bool isUserAllele = _userAllelesSet.contains(allele);
-            return Container(
-              width: currentCellWidth,
-              decoration: BoxDecoration(
-                border: Border(right: BorderSide(color: Colors.grey.shade300)),
-              ),
-              child: RotatedBox(
-                quarterTurns: 3,
-                child: Container(
-                  alignment: Alignment.centerLeft,
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    allele,
-                    style: TextStyle(
-                      fontSize: currentFontSize,
-                      fontWeight:
-                          isUserAllele ? FontWeight.bold : FontWeight.normal,
-                      color: isUserAllele ? Colors.black : Colors.grey[700],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
+          _fixedCell('Epitope Name', nameW,
+              isHeader: true, sortKey: 'Epitope Name'),
+          _fixedCell('Pos', countW,
+              isHeader: true,
+              textColor: Colors.green,
+              sortKey: 'Number of Positive Matches'),
+          _fixedCell('Neg', countW,
+              isHeader: true,
+              textColor: Colors.red,
+              sortKey: 'Number of Missing Required Alleles'),
         ],
       ),
     );
   }
 
-  Widget _buildHighPerformanceRow(
-    Map<String, dynamic> row,
-    double nameW,
-    double countW,
-  ) {
-    final bool highlightRow = row['cached_highlightRow'] ?? false;
-    final Color nameBgColor =
-        highlightRow ? Colors.pink.shade100 : Colors.white;
+  Widget _buildScrollableHeader() {
+    return Container(
+      height: currentHeaderHeight,
+      color: Colors.grey[200],
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: _sortedColumns.map((allele) {
+          bool isUserAllele = _userAllelesSet.contains(allele);
+          return Container(
+            width: currentCellWidth,
+            decoration: BoxDecoration(
+              border: Border(right: BorderSide(color: Colors.grey.shade300)),
+            ),
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: Container(
+                alignment: Alignment.centerLeft,
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  allele,
+                  style: TextStyle(
+                    fontSize: currentFontSize,
+                    fontWeight:
+                        isUserAllele ? FontWeight.bold : FontWeight.normal,
+                    color: isUserAllele ? Colors.black : Colors.grey[700],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 
-    // Use horizontal scroll offset to calculate visible range
-    double scrollOffset = 0;
-    if (_horizontalScrollController.hasClients) {
-      scrollOffset = _horizontalScrollController.offset;
-    }
-
-    // Offset of the CustomPaint widget relative to the start of the scrollable content
-    // The CustomPaint starts after nameW + countW * 2
-    final double heatmapStartX = nameW + (countW * 2);
+  Widget _buildScrollableRow(Map<String, dynamic> row) {
+    final Set<String> positiveMatches =
+        row['cached_positiveMatchesSet'] ?? <String>{};
+    final Set<String> missingRequired =
+        row['cached_missingRequiredSet'] ?? <String>{};
 
     return Container(
       height: currentCellHeight,
@@ -586,30 +645,51 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
       ),
       child: Row(
-        children: [
-          _fixedCell(row['Epitope Name'] ?? '', nameW, bgColor: nameBgColor),
-          _fixedCell(row['Number of Positive Matches'].toString(), countW),
-          _fixedCell(
-            row['Number of Missing Required Alleles'].toString(),
-            countW,
-          ),
-          Expanded(
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: HeatmapRowPainter(
-                columns: _sortedColumns,
-                positiveMatches: row['cached_positiveMatchesSet'] ?? <String>{},
-                missingRequired: row['cached_missingRequiredSet'] ?? <String>{},
-                cellWidth: currentCellWidth,
-                recipientSet: _recipientHlaSet,
-                donorSet: _donorHlaSet,
-                fontSize: currentFontSize,
-                scrollOffset: scrollOffset,
-                heatmapStartX: heatmapStartX,
-              ),
+        children: _sortedColumns.map((allele) {
+          bool isPositive = positiveMatches.contains(allele);
+          bool isMissing = missingRequired.contains(allele);
+
+          Color cellColor = Colors.grey.shade100;
+          if (isPositive) cellColor = Colors.green.shade600;
+          if (isMissing) cellColor = Colors.red.shade600;
+
+          String? label;
+          if (isPositive || isMissing) {
+            if (_recipientHlaSet.contains(allele)) {
+              label = "S";
+            } else if (_donorHlaSet.contains(allele)) {
+              label = "D";
+            }
+          }
+
+          return Container(
+            width: currentCellWidth,
+            height: currentCellHeight,
+            decoration: BoxDecoration(
+              color: cellColor,
+              border: Border.all(color: Colors.white, width: 0.5),
             ),
-          ),
-        ],
+            child: label != null
+                ? Center(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: currentFontSize,
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black45,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : null,
+          );
+        }).toList(),
       ),
     );
   }
@@ -620,25 +700,52 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     bool isHeader = false,
     Color? textColor,
     Color? bgColor,
+    String? sortKey,
   }) {
-    return Container(
-      width: width,
-      alignment: Alignment.center,
-      color: bgColor,
-      padding: EdgeInsets.symmetric(horizontal: 2),
-      decoration: isHeader
-          ? BoxDecoration(
-              border: Border(right: BorderSide(color: Colors.grey.shade300)),
-            )
-          : null,
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
-          color: textColor ?? Colors.black87,
-          fontSize: isHeader ? 12 : 11,
+    bool isSorted = sortKey != null && _sortColumn == sortKey;
+
+    return InkWell(
+      onTap: sortKey != null ? () => _sortResults(sortKey) : null,
+      child: Container(
+        width: width,
+        alignment: Alignment.center,
+        padding: EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          color: bgColor ?? (isHeader ? Colors.grey[200] : Colors.white),
+          border: Border(
+            right: BorderSide(color: Colors.grey.shade300),
+            bottom: isHeader
+                ? BorderSide(color: Colors.grey.shade400, width: 2)
+                : BorderSide.none,
+          ),
         ),
-        overflow: TextOverflow.ellipsis,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+                  color: textColor ?? Colors.black87,
+                  fontSize: isHeader ? 12 : 11,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isHeader && sortKey != null)
+              Icon(
+                isSorted
+                    ? (_sortAscending
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward)
+                    : Icons.sort,
+                size: 12,
+                color: isSorted ? Colors.blue : Colors.grey,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -666,7 +773,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               min: 0.5,
               max: 3.0,
               divisions: 25,
-              onChanged: (value) => _zoomLevel.value = value,
+              onChanged: (value) => setState(() => _zoomLevel.value = value),
             ),
           ),
           IconButton(
@@ -677,111 +784,67 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       ),
     );
   }
-}
 
-class HeatmapRowPainter extends CustomPainter {
-  final List<String> columns;
-  final Set<String> positiveMatches;
-  final Set<String> missingRequired;
-  final double cellWidth;
-  final Set<String> recipientSet;
-  final Set<String> donorSet;
-  final double fontSize;
-  final double scrollOffset;
-  final double heatmapStartX;
-
-  HeatmapRowPainter({
-    required this.columns,
-    required this.positiveMatches,
-    required this.missingRequired,
-    required this.cellWidth,
-    required this.recipientSet,
-    required this.donorSet,
-    required this.fontSize,
-    required this.scrollOffset,
-    required this.heatmapStartX,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()..style = PaintingStyle.fill;
-    final Paint borderPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 0.5
-      ..style = PaintingStyle.stroke;
-
-    // Calculate visible range in terms of column indices
-    final double viewportStart = scrollOffset - heatmapStartX;
-    final double viewportEnd = viewportStart + size.width;
-
-    int startIdx = (viewportStart / cellWidth).floor().clamp(0, columns.length);
-    int endIdx = (viewportEnd / cellWidth).ceil().clamp(0, columns.length);
-
-    for (int i = startIdx; i < endIdx; i++) {
-      String allele = columns[i];
-      bool isPositive = positiveMatches.contains(allele);
-      bool isMissing = missingRequired.contains(allele);
-      bool isAlleleInEpitope = isPositive || isMissing;
-
-      if (isPositive) {
-        paint.color = Colors.green.shade600;
-      } else if (isMissing) {
-        paint.color = Colors.red.shade600;
-      } else {
-        paint.color = Colors.grey.shade100;
-      }
-
-      Rect rect = Rect.fromLTWH(i * cellWidth, 0, cellWidth, size.height);
-      canvas.drawRect(rect, paint);
-      canvas.drawRect(rect, borderPaint);
-
-      if (isAlleleInEpitope) {
-        String? label;
-        if (recipientSet.contains(allele)) {
-          label = "S";
-        } else if (donorSet.contains(allele)) {
-          label = "D";
-        }
-
-        if (label != null) {
-          final textSpan = TextSpan(
-            text: label,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: fontSize,
-              fontWeight: FontWeight.bold,
-              shadows: [
-                Shadow(
-                  offset: Offset(1, 1),
-                  blurRadius: 2,
-                  color: Colors.black45,
+  Widget _buildFooter() {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Created By: ',
+                style: TextStyle(fontSize: 12.5, color: Colors.grey),
+              ),
+              InkWell(
+                onTap: () {
+                  launchUrl(Uri.parse(
+                      "https://www.linkedin.com/in/rodin-hooshiyar-07036a3a0/"));
+                },
+                child: Text(
+                  'Rodin Hooshiyar',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.blue.withValues(alpha: 0.8),
+                    decoration: TextDecoration.underline,
+                    decorationColor: Colors.blue.withValues(alpha: 0.8),
+                  ),
                 ),
-              ],
+              ),
+              Text(
+                ' and ',
+                style: TextStyle(fontSize: 12.5, color: Colors.grey),
+              ),
+              InkWell(
+                onTap: () {
+                  launchUrl(Uri.parse(
+                      "https://www.linkedin.com/in/manxuan-michael-zhang-014b29237/"));
+                },
+                child: Text(
+                  'Manxuan Zhang',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.blue.withValues(alpha: 0.8),
+                    decoration: TextDecoration.underline,
+                    decorationColor: Colors.blue.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0, right: 16.0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'v$_appVersion',
+                style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+              ),
             ),
-          );
-          final textPainter = TextPainter(
-            text: textSpan,
-            textDirection: TextDirection.ltr,
-          );
-          textPainter.layout();
-
-          final offset = Offset(
-            (i * cellWidth) + (cellWidth - textPainter.width) / 2,
-            (size.height - textPainter.height) / 2,
-          );
-          textPainter.paint(canvas, offset);
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant HeatmapRowPainter old) {
-    return old.columns != columns ||
-        old.recipientSet != recipientSet ||
-        old.donorSet != donorSet ||
-        old.cellWidth != cellWidth ||
-        old.scrollOffset != scrollOffset ||
-        old.fontSize != fontSize;
+          ),
+        ],
+      ),
+    );
   }
 }
