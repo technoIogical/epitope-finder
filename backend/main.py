@@ -2,58 +2,104 @@ import functions_framework
 from google.cloud import bigquery
 import os
 import json
+import threading
+import sys
+
+# Try to import resource for memory tracking (Linux/Unix only)
+try:
+    import resource
+except ImportError:
+    resource = None
 
 EPITOPE_DATA = None
 ALLELE_CACHE = None
 PROJECT_ID = "epitopefinder-458404"
+# Lock to prevent race conditions during initialization
+INIT_LOCK = threading.Lock()
+
+def log_memory_usage(tag):
+    if resource:
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # On Linux, ru_maxrss is in kilobytes
+        print(f"[{tag}] Memory Usage: {usage / 1024:.2f} MiB")
+    else:
+        # Fallback or Windows
+        print(f"[{tag}] Memory tracking not available (resource module missing).")
 
 def load_epitope_data():
     global EPITOPE_DATA, ALLELE_CACHE
+    
+    # Fast check without lock
     if EPITOPE_DATA is not None and ALLELE_CACHE is not None:
         return EPITOPE_DATA
 
-    client = bigquery.Client(project=PROJECT_ID)
+    with INIT_LOCK:
+        # Double-check inside lock
+        if EPITOPE_DATA is not None and ALLELE_CACHE is not None:
+            return EPITOPE_DATA
+            
+        log_memory_usage("Start Loading")
 
-    # Fetch Epitope Data
-    if EPITOPE_DATA is None:
-        print("Loading epitope data from BigQuery...")
-        try:
-            query = """
-                SELECT
-                    epitope_id AS `Epitope ID`,
-                    epitope_name AS `Epitope Name`,
-                    locus AS Locus,
-                    alleles AS All_Epitope_Alleles,
-                    required_alleles AS Required_Alleles
-                FROM
-                    `epitopefinder-458404`.epitopes.HLA_data
-            """
-            query_job = client.query(query)
-            
-            # Synchronous execution
-            rows = list(query_job.result())
-            
-            EPITOPE_DATA = [dict(row) for row in rows]
-            print(f"Successfully loaded {len(EPITOPE_DATA)} epitope rows.")
-        except Exception as e:
-            print(f"Error loading epitope data from BigQuery: {e}")
-            raise e
+        client = bigquery.Client(project=PROJECT_ID)
 
-    # Fetch Allele List
-    if ALLELE_CACHE is None:
-        print("Loading allele list from BigQuery...")
-        try:
-            query = "SELECT allele_name FROM `epitopefinder-458404`.epitopes.allele_list ORDER BY allele_name"
-            query_job = client.query(query)
-            
-            # Synchronous execution
-            rows = list(query_job.result())
-            
-            ALLELE_CACHE = [row["allele_name"] for row in rows]
-            print(f"Successfully loaded {len(ALLELE_CACHE)} allele names.")
-        except Exception as e:
-            print(f"Error loading allele list from BigQuery: {e}")
-            raise e
+        # Fetch Epitope Data
+        if EPITOPE_DATA is None:
+            print("Loading epitope data from BigQuery...")
+            try:
+                query = """
+                    SELECT
+                        epitope_id AS `Epitope ID`,
+                        epitope_name AS `Epitope Name`,
+                        locus AS Locus,
+                        alleles AS All_Epitope_Alleles,
+                        required_alleles AS Required_Alleles
+                    FROM
+                        `epitopefinder-458404`.epitopes.HLA_data
+                """
+                query_job = client.query(query)
+                
+                # Streaming execution to save memory
+                EPITOPE_DATA = []
+                for row in query_job.result():
+                    # Pre-convert lists to sets for faster lookup and reduced memory churn during requests
+                    all_alleles_list = row["All_Epitope_Alleles"] if row["All_Epitope_Alleles"] else []
+                    required_alleles_list = row["Required_Alleles"] if row["Required_Alleles"] else []
+                    
+                    EPITOPE_DATA.append({
+                        "Epitope ID": row["Epitope ID"],
+                        "Epitope Name": row["Epitope Name"],
+                        "Locus": row["Locus"],
+                        # Store original list for JSON serialization
+                        "All_Epitope_Alleles": all_alleles_list,
+                        # Pre-calculate set for O(1) lookups
+                        "_All_Epitope_Alleles_Set": set(all_alleles_list),
+                        # Store original list
+                        "Required_Alleles": required_alleles_list,
+                        # Pre-calculate set
+                        "_Required_Alleles_Set": {ra for ra in required_alleles_list if ra and ra.strip()}
+                    })
+                
+                print(f"Successfully loaded {len(EPITOPE_DATA)} epitope rows.")
+                log_memory_usage("After Epitope Load")
+            except Exception as e:
+                print(f"Error loading epitope data from BigQuery: {e}")
+                raise e
+
+        # Fetch Allele List
+        if ALLELE_CACHE is None:
+            print("Loading allele list from BigQuery...")
+            try:
+                query = "SELECT allele_name FROM `epitopefinder-458404`.epitopes.allele_list ORDER BY allele_name"
+                query_job = client.query(query)
+                
+                # Streaming execution to save memory
+                ALLELE_CACHE = [row["allele_name"] for row in query_job.result()]
+                
+                print(f"Successfully loaded {len(ALLELE_CACHE)} allele names.")
+                log_memory_usage("After Allele Load")
+            except Exception as e:
+                print(f"Error loading allele list from BigQuery: {e}")
+                raise e
 
     return EPITOPE_DATA
 
@@ -65,8 +111,8 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
     
     for row in data:
         # 1. Calculate Positive Matches using set intersection for speed
-        all_alleles_list = row.get("All_Epitope_Alleles", [])
-        all_alleles_set = set(all_alleles_list)
+        # Use pre-calculated set
+        all_alleles_set = row.get("_All_Epitope_Alleles_Set", set())
         
         positive_matches_set = all_alleles_set.intersection(input_alleles)
         
@@ -77,9 +123,8 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
         positive_matches = list(positive_matches_set)
 
         # 2. Calculate Missing Required Alleles
-        required_alleles_list = row.get("Required_Alleles", [])
-        # Use set difference for missing required alleles
-        required_alleles_set = {ra for ra in required_alleles_list if ra and ra.strip()}
+        # Use pre-calculated set
+        required_alleles_set = row.get("_Required_Alleles_Set", set())
         missing_required_set = required_alleles_set.difference(input_alleles)
         missing_required = list(missing_required_set)
 
@@ -91,7 +136,8 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
             "Epitope ID": row["Epitope ID"],
             "Epitope Name": row["Epitope Name"],
             "Locus": row["Locus"],
-            "All_Epitope_Alleles": all_alleles_list,
+            # Use the reference to the original list to save memory/avoid copy
+            "All_Epitope_Alleles": row["All_Epitope_Alleles"],
             "Positive Matches": positive_matches,
             "Missing Required Alleles": missing_required,
             "Number of Positive Matches": len(positive_matches),
@@ -114,56 +160,57 @@ def fetch_bq_epitopes(request):
     HTTP Cloud Function that retrieves epitope data from BigQuery (lazily cached),
     computes matches against input alleles, and returns the sorted results.
     """
-    # Handle CORS preflight request
-    if request.method == "OPTIONS":
-        headers = {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Max-Age": "3600",
-        }
-        return ("", 204, headers)
-
-    headers = {
+    # Define CORS headers to be used in ALL responses
+    cors_headers = {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json"
+        "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "3600",
     }
 
+    # Handle CORS preflight request (OPTIONS) immediately
+    if request.method == "OPTIONS":
+        return ("", 204, cors_headers)
+
+    # Default headers for successful JSON responses
+    json_headers = {**cors_headers, "Content-Type": "application/json"}
+
     try:
-        # Ensure cache is populated if empty (Synchronous call now)
+        # Ensure cache is populated if empty
         if EPITOPE_DATA is None or ALLELE_CACHE is None:
             load_epitope_data()
-    except Exception as e:
-        print(f"Initialization error: {e}")
-        return (json.dumps({"error": f"Internal Server Error: Could not initialize data. {str(e)}"}), 500, headers)
+            
+        # Normalize path by removing trailing slashes for consistent matching
+        path = request.path.rstrip('/')
 
-    # Handle /robots.txt
-    if request.path.endswith('/robots.txt'):
-        return ("User-agent: *\nDisallow: /", 200, {"Content-Type": "text/plain", **headers})
+        # Handle /robots.txt
+        if path.endswith('/robots.txt'):
+            return ("User-agent: *\nDisallow: /", 200, {**cors_headers, "Content-Type": "text/plain"})
 
-    # Handle /alleles endpoint
-    if request.path.endswith('/alleles'):
-        return (json.dumps(ALLELE_CACHE), 200, headers)
+        # Handle /alleles endpoint
+        if path.endswith('/alleles'):
+            return (json.dumps(ALLELE_CACHE), 200, json_headers)
 
-    # Handle /warmup path or GET request (health check)
-    if request.path.endswith('/warmup') or request.method == 'GET':
-        return (json.dumps({"status": "ready"}), 200, headers)
+        # Handle /warmup path or GET request (health check)
+        if path.endswith('/warmup') or request.method == 'GET':
+            return (json.dumps({"status": "ready"}), 200, json_headers)
 
-    # Main POST logic
-    request_json = request.get_json(silent=True)
-    if request_json is None:
-        return (json.dumps({"error": "Bad Request: Request body must be valid JSON."}), 400, headers)
+        # Main POST logic for epitope matching
+        request_json = request.get_json(silent=True)
+        if request_json is None:
+            return (json.dumps({"error": "Bad Request: Request body must be valid JSON."}), 400, json_headers)
 
-    input_alleles = set(request_json.get("input_alleles", []))
-    recipient_hla = set(request_json.get("recipient_hla", []))
+        input_alleles = set(request_json.get("input_alleles", []))
+        recipient_hla = set(request_json.get("recipient_hla", []))
 
-    if not input_alleles:
-        return (json.dumps({"error": "Bad Request: `input_alleles` array is required."}), 400, headers)
+        if not input_alleles:
+            return (json.dumps({"error": "Bad Request: `input_alleles` array is required."}), 400, json_headers)
 
-    try:
         # process_epitope_matching is CPU bound
         results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
-        return (json.dumps(results), 200, headers)
+        return (json.dumps(results), 200, json_headers)
+
     except Exception as e:
-        print(f"Processing error: {e}")
-        return (json.dumps({"error": f"Internal Server Error during processing: {str(e)}"}), 500, headers)
+        print(f"Error in fetch_bq_epitopes: {e}")
+        # Always return CORS headers even on internal errors
+        return (json.dumps({"error": f"Internal Server Error: {str(e)}"}), 500, json_headers)
