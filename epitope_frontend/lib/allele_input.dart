@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class AlleleInput extends StatefulWidget {
@@ -65,21 +67,25 @@ class _AlleleInputState extends State<AlleleInput> {
         child: RawAutocomplete<String>(
           textEditingController: _controller,
           focusNode: _internalFocusNode,
-          optionsBuilder: (TextEditingValue textEditingValue) {
+          optionsBuilder: (TextEditingValue textEditingValue) async {
             if (textEditingValue.text.isEmpty) {
               return const Iterable<String>.empty();
             }
+
             final String query = textEditingValue.text.toLowerCase();
-            final List<String> startsWith = widget.allAlleles
-                .where(
-                    (String option) => option.toLowerCase().startsWith(query))
-                .toList();
-            final List<String> contains = widget.allAlleles
-                .where((String option) =>
-                    option.toLowerCase().contains(query) &&
-                    !option.toLowerCase().startsWith(query))
-                .toList();
-            return [...startsWith, ...contains].take(50);
+
+            // Use compute for filtering if the list is large to avoid jank
+            if (widget.allAlleles.length > 500) {
+              return await compute(_filterAlleles, {
+                'query': query,
+                'alleles': widget.allAlleles,
+              });
+            } else {
+              return _filterAlleles({
+                'query': query,
+                'alleles': widget.allAlleles,
+              });
+            }
           },
           onSelected: (String selection) {
             setState(() {
@@ -156,7 +162,12 @@ class _AlleleInputState extends State<AlleleInput> {
                       child: TextField(
                         controller: controller,
                         focusNode: focusNode,
-                        onChanged: (val) => setState(() {}),
+                        onChanged: (val) {
+                          // Only rebuild the input decorator local state
+                          if (mounted) {
+                            setState(() {});
+                          }
+                        },
                         decoration: const InputDecoration(
                           border: InputBorder.none,
                           isDense: true,
@@ -210,4 +221,26 @@ class _AlleleInputState extends State<AlleleInput> {
       );
     });
   }
+}
+
+/// Independent filtering function that can be run in a separate isolate
+List<String> _filterAlleles(Map<String, dynamic> params) {
+  final String query = params['query'];
+  final List<String> alleles = params['alleles'] as List<String>;
+
+  final List<String> startsWith = [];
+  final List<String> contains = [];
+
+  for (final option in alleles) {
+    final lowerOption = option.toLowerCase();
+    if (lowerOption.startsWith(query)) {
+      startsWith.add(option);
+    } else if (lowerOption.contains(query)) {
+      contains.add(option);
+    }
+    // Limit results early to save time and avoid heavy UI rendering
+    if (startsWith.length + contains.length >= 50) break;
+  }
+
+  return [...startsWith, ...contains].take(50).toList();
 }
