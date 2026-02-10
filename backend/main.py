@@ -2,6 +2,7 @@ import functions_framework
 from google.cloud import bigquery
 import os
 import asyncio
+import json
 
 EPITOPE_DATA = None
 ALLELE_CACHE = None
@@ -28,13 +29,9 @@ async def load_epitope_data():
                 FROM
                     `epitopefinder-458404`.epitopes.HLA_data
             """
-            # bigquery.Client.query is not async, but we can use query_job.result() which blocks.
-            # To make it truly async in Cloud Functions we can run it in a thread pool if needed,
-            # but usually for initialization it's okay. However, to follow the request:
             query_job = client.query(query)
             
-            # Using loop.run_in_executor to not block the event loop if we want to be strict
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             rows = await loop.run_in_executor(None, lambda: list(query_job.result()))
             
             EPITOPE_DATA = [dict(row) for row in rows]
@@ -47,10 +44,10 @@ async def load_epitope_data():
     if ALLELE_CACHE is None:
         print("Loading allele list from BigQuery...")
         try:
-            query = "SELECT allele_name FROM epitopefinder-458404.epitopes.allele_list ORDER BY allele_name"
+            query = "SELECT allele_name FROM `epitopefinder-458404`.epitopes.allele_list ORDER BY allele_name"
             query_job = client.query(query)
             
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             rows = await loop.run_in_executor(None, lambda: list(query_job.result()))
             
             ALLELE_CACHE = [row["allele_name"] for row in rows]
@@ -63,6 +60,9 @@ async def load_epitope_data():
 
 def process_epitope_matching(data, input_alleles, recipient_hla):
     results = []
+    
+    # Pre-calculate recipient HLA for faster intersection
+    recipient_hla_set = set(recipient_hla)
     
     for row in data:
         # 1. Calculate Positive Matches using set intersection for speed
@@ -85,7 +85,7 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
         missing_required = list(missing_required_set)
 
         # 3. Calculate Self Match Count using set intersection
-        self_match_count = len(positive_matches_set.intersection(recipient_hla))
+        self_match_count = len(positive_matches_set.intersection(recipient_hla_set))
 
         # Build the result object
         results.append({
@@ -111,48 +111,56 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
 
 @functions_framework.http
 async def fetch_bq_epitopes(request):
+    # Handle CORS preflight request
     if request.method == "OPTIONS":
         headers = {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, GET",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Max-Age": "3600",
         }
         return ("", 204, headers)
 
-    headers = {"Access-Control-Allow-Origin": "*"}
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # Ensure cache is populated if empty
+        if EPITOPE_DATA is None or ALLELE_CACHE is None:
+            await load_epitope_data()
+    except Exception as e:
+        print(f"Initialization error: {e}")
+        return (json.dumps({"error": f"Internal Server Error: Could not initialize data. {str(e)}"}), 500, headers)
 
     # Handle /robots.txt
     if request.path.endswith('/robots.txt'):
         return ("User-agent: *\nDisallow: /", 200, {"Content-Type": "text/plain", **headers})
 
-    # Ensure cache is populated if empty
-    if EPITOPE_DATA is None or ALLELE_CACHE is None:
-        try:
-            await load_epitope_data()
-        except Exception as e:
-            return (f"Internal Server Error: Could not initialize data. {str(e)}", 500, headers)
-
     # Handle /alleles endpoint
     if request.path.endswith('/alleles'):
-        return (ALLELE_CACHE, 200, headers)
+        return (json.dumps(ALLELE_CACHE), 200, headers)
 
-    # Handle /warmup path or GET request
+    # Handle /warmup path or GET request (health check)
     if request.path.endswith('/warmup') or request.method == 'GET':
-        return ({"status": "ready"}, 200, headers)
+        return (json.dumps({"status": "ready"}), 200, headers)
 
+    # Main POST logic
     request_json = request.get_json(silent=True)
     if request_json is None:
-        return ("Bad Request: Request body must be valid JSON.", 400, headers)
+        return (json.dumps({"error": "Bad Request: Request body must be valid JSON."}), 400, headers)
 
     input_alleles = set(request_json.get("input_alleles", []))
     recipient_hla = set(request_json.get("recipient_hla", []))
 
     if not input_alleles:
-        return ("Bad Request: `input_alleles` array is required.", 400, headers)
+        return (json.dumps({"error": "Bad Request: `input_alleles` array is required."}), 400, headers)
 
-    # process_epitope_matching is CPU bound, so we just call it. 
-    # If it was very heavy, we could use run_in_executor but it's likely fine here.
-    results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
-
-    return (results, 200, headers)
+    try:
+        # process_epitope_matching is CPU bound
+        results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
+        return (json.dumps(results), 200, headers)
+    except Exception as e:
+        print(f"Processing error: {e}")
+        return (json.dumps({"error": f"Internal Server Error during processing: {str(e)}"}), 500, headers)
