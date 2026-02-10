@@ -1,12 +1,13 @@
 import functions_framework
 from google.cloud import bigquery
 import os
+import asyncio
 
 EPITOPE_DATA = None
 ALLELE_CACHE = None
 PROJECT_ID = "epitopefinder-458404"
 
-def load_epitope_data():
+async def load_epitope_data():
     global EPITOPE_DATA, ALLELE_CACHE
     if EPITOPE_DATA is not None and ALLELE_CACHE is not None:
         return EPITOPE_DATA
@@ -27,8 +28,16 @@ def load_epitope_data():
                 FROM
                     `epitopefinder-458404`.epitopes.HLA_data
             """
+            # bigquery.Client.query is not async, but we can use query_job.result() which blocks.
+            # To make it truly async in Cloud Functions we can run it in a thread pool if needed,
+            # but usually for initialization it's okay. However, to follow the request:
             query_job = client.query(query)
-            EPITOPE_DATA = [dict(row) for row in query_job.result()]
+            
+            # Using loop.run_in_executor to not block the event loop if we want to be strict
+            loop = asyncio.get_event_loop()
+            rows = await loop.run_in_executor(None, lambda: list(query_job.result()))
+            
+            EPITOPE_DATA = [dict(row) for row in rows]
             print(f"Successfully loaded {len(EPITOPE_DATA)} epitope rows.")
         except Exception as e:
             print(f"Error loading epitope data from BigQuery: {e}")
@@ -40,7 +49,11 @@ def load_epitope_data():
         try:
             query = "SELECT allele_name FROM epitopefinder-458404.epitopes.allele_list ORDER BY allele_name"
             query_job = client.query(query)
-            ALLELE_CACHE = [row["allele_name"] for row in query_job.result()]
+            
+            loop = asyncio.get_event_loop()
+            rows = await loop.run_in_executor(None, lambda: list(query_job.result()))
+            
+            ALLELE_CACHE = [row["allele_name"] for row in rows]
             print(f"Successfully loaded {len(ALLELE_CACHE)} allele names.")
         except Exception as e:
             print(f"Error loading allele list from BigQuery: {e}")
@@ -97,7 +110,7 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
     return results
 
 @functions_framework.http
-def fetch_bq_epitopes(request):
+async def fetch_bq_epitopes(request):
     if request.method == "OPTIONS":
         headers = {
             "Access-Control-Allow-Origin": "*",
@@ -109,10 +122,14 @@ def fetch_bq_epitopes(request):
 
     headers = {"Access-Control-Allow-Origin": "*"}
 
+    # Handle /robots.txt
+    if request.path.endswith('/robots.txt'):
+        return ("User-agent: *\nDisallow: /", 200, {"Content-Type": "text/plain", **headers})
+
     # Ensure cache is populated if empty
     if EPITOPE_DATA is None or ALLELE_CACHE is None:
         try:
-            load_epitope_data()
+            await load_epitope_data()
         except Exception as e:
             return (f"Internal Server Error: Could not initialize data. {str(e)}", 500, headers)
 
@@ -134,6 +151,8 @@ def fetch_bq_epitopes(request):
     if not input_alleles:
         return ("Bad Request: `input_alleles` array is required.", 400, headers)
 
+    # process_epitope_matching is CPU bound, so we just call it. 
+    # If it was very heavy, we could use run_in_executor but it's likely fine here.
     results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
 
     return (results, 200, headers)
