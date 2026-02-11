@@ -113,7 +113,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
     _stickyVerticalScrollController.dispose();
-    _zoomLevel.dispose();
     super.dispose();
   }
 
@@ -296,59 +295,60 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
-            _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
-            _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
-            _updateZoom(-0.1),
-        const SingleActivator(LogicalKeyboardKey.equal, alt: true): () =>
-            _updateZoom(0.1),
-        const SingleActivator(LogicalKeyboardKey.minus, alt: true): () =>
-            _updateZoom(-0.1),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          appBar: AppBar(
-            centerTitle: true,
-            title: Text('Epitope Finder'),
-          ),
-          body: Column(
-            children: [
-              _buildSearchHeader(),
-              if (_epitopeResults.isNotEmpty) ...[
-                _buildLegend(),
-                _buildZoomControl(),
-                Divider(height: 1),
-              ],
-              Expanded(
-                child: _isLoading
-                    ? Center(child: CircularProgressIndicator())
-                    : _errorMessage.isNotEmpty
-                        ? Center(
-                            child: Text(
-                              _errorMessage,
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          )
-                        : _epitopeResults.isEmpty
-                            ? Center(
-                                child: Text('Enter antibodies to view matrix.'))
-                            : ValueListenableBuilder<double>(
-                                valueListenable: _zoomLevel,
-                                builder: (context, zoom, child) {
-                                  return _buildMatrixContent();
-                                },
-                              ),
+    return ValueListenableBuilder<double>(
+      valueListenable: _zoomLevel,
+      builder: (context, zoom, child) {
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.equal, control: true):
+                () => _updateZoom(0.1),
+            const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
+                _updateZoom(0.1),
+            const SingleActivator(LogicalKeyboardKey.minus, control: true):
+                () => _updateZoom(-0.1),
+            const SingleActivator(LogicalKeyboardKey.equal, alt: true): () =>
+                _updateZoom(0.1),
+            const SingleActivator(LogicalKeyboardKey.minus, alt: true): () =>
+                _updateZoom(-0.1),
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              appBar: AppBar(
+                centerTitle: true,
+                title: Text('Epitope Finder'),
               ),
-              _buildFooter(),
-            ],
+              body: Column(
+                children: [
+                  _buildSearchHeader(),
+                  if (_epitopeResults.isNotEmpty) ...[
+                    _buildLegend(),
+                    _buildZoomControl(),
+                    Divider(height: 1),
+                  ],
+                  Expanded(
+                    child: _isLoading
+                        ? Center(child: CircularProgressIndicator())
+                        : _errorMessage.isNotEmpty
+                            ? Center(
+                                child: Text(
+                                  _errorMessage,
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              )
+                            : _epitopeResults.isEmpty
+                                ? Center(
+                                    child: Text(
+                                        'Enter antibodies to view matrix.'))
+                                : _buildMatrixContent(),
+                  ),
+                  _buildFooter(),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -376,7 +376,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   hintText: 'e.g. A*01:01, B*08:01',
                   selectedAlleles: _selectedAntibodies,
                   allAlleles: _allAlleles,
-                  onChanged: () {},
+                  onChanged: () => setState(() {}),
                   isWarming: _isWarming,
                   focusNode: _antibodyFocusNode,
                 ),
@@ -386,7 +386,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   hintText: 'e.g. A*02:01',
                   selectedAlleles: _selectedRecipientHla,
                   allAlleles: _allAlleles,
-                  onChanged: () {},
+                  onChanged: () => setState(() {}),
                   fillColor: Colors.blue[50],
                 ),
                 const SizedBox(height: 8),
@@ -395,7 +395,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   hintText: 'e.g. B*44:02',
                   selectedAlleles: _selectedDonorHla,
                   allAlleles: _allAlleles,
-                  onChanged: () {},
+                  onChanged: () => setState(() {}),
                   fillColor: Colors.orange[50],
                 ),
               ],
@@ -757,14 +757,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          ValueListenableBuilder<double>(
-            valueListenable: _zoomLevel,
-            builder: (context, zoom, child) {
-              return Text(
-                "Zoom: ${(zoom * 100).round()}%",
-                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-              );
-            },
+          Text(
+            "Zoom: ${(_zoomLevel.value * 100).round()}%",
+            style: TextStyle(color: Colors.grey[600], fontSize: 12),
           ),
           SizedBox(width: 8),
           IconButton(
@@ -773,17 +768,12 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           ),
           SizedBox(
             width: 200,
-            child: ValueListenableBuilder<double>(
-              valueListenable: _zoomLevel,
-              builder: (context, zoom, child) {
-                return Slider(
-                  value: zoom,
-                  min: 0.5,
-                  max: 3.0,
-                  divisions: 25,
-                  onChanged: (value) => _zoomLevel.value = value,
-                );
-              },
+            child: Slider(
+              value: _zoomLevel.value,
+              min: 0.5,
+              max: 3.0,
+              divisions: 25,
+              onChanged: (value) => setState(() => _zoomLevel.value = value),
             ),
           ),
           IconButton(
