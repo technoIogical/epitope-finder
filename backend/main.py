@@ -4,8 +4,8 @@ import os
 import json
 import threading
 import sys
-from flask import Flask, make_response
-from flask_cors import CORS
+from flask import Flask, make_response, jsonify
+from flask_cors import CORS, cross_origin
 
 # Try to import resource for memory tracking (Linux/Unix only)
 try:
@@ -174,83 +174,58 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
 
 # Initialize Flask app for CORS handling
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
 
 @functions_framework.http
+@cross_origin()
 def fetch_bq_epitopes(request):
     """
     HTTP Cloud Function that retrieves epitope data from BigQuery (lazily cached),
     computes matches against input alleles, and returns the sorted results.
     """
-    # Use Flask's request context to leverage flask-cors
-    with app.test_request_context(
-        path=request.path,
-        method=request.method,
-        headers=request.headers,
-        data=request.get_data()
-    ):
-        try:
-            # Ensure cache is populated if empty
-            if EPITOPE_DATA is None or ALLELE_CACHE is None:
-                load_epitope_data()
-                
-            # Normalize path by removing trailing slashes for consistent matching
-            path = request.path.rstrip('/')
+    # Handle CORS preflight request (OPTIONS)
+    if request.method == 'OPTIONS':
+        return make_response('', 204)
 
-            # Handle CORS preflight request (OPTIONS) handled by flask-cors wrapper later
-            # but we need to return a valid response from this function.
-            # Actually, since we are using app.test_request_context,
-            # we should let Flask handle the routing if we wanted full integration,
-            # but for Cloud Functions, we just need to wrap the response.
-
-            response_data = None
-            status_code = 200
-            content_type = "application/json"
-
-            # Handle /robots.txt
-            if path.endswith('/robots.txt'):
-                response_data = "User-agent: *\nDisallow: /"
-                content_type = "text/plain"
+    try:
+        # Ensure cache is populated if empty
+        if EPITOPE_DATA is None or ALLELE_CACHE is None:
+            load_epitope_data()
             
-            # Handle /alleles endpoint
-            elif path.endswith('/alleles'):
-                response_data = json.dumps(ALLELE_CACHE)
-            
-            # Handle /warmup path or GET request (health check)
-            elif path.endswith('/warmup') or request.method == 'GET':
-                response_data = json.dumps({"status": "ready"})
-            
-            # Main POST logic for epitope matching
-            elif request.method == 'POST':
-                request_json = request.get_json(silent=True)
-                if request_json is None:
-                    response_data = json.dumps({"error": "Bad Request: Request body must be valid JSON."})
-                    status_code = 400
-                else:
-                    input_alleles = set(request_json.get("input_alleles", []))
-                    recipient_hla = set(request_json.get("recipient_hla", []))
+        # Normalize path by removing trailing slashes for consistent matching
+        path = request.path.rstrip('/')
 
-                    if not input_alleles:
-                        response_data = json.dumps({"error": "Bad Request: `input_alleles` array is required."})
-                        status_code = 400
-                    else:
-                        # process_epitope_matching is CPU bound
-                        results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
-                        response_data = json.dumps(results)
+        # Handle /robots.txt
+        if path.endswith('/robots.txt'):
+            response = make_response("User-agent: *\nDisallow: /", 200)
+            response.headers["Content-Type"] = "text/plain"
+            return response
+        
+        # Handle /alleles endpoint
+        if path.endswith('/alleles'):
+            return jsonify(ALLELE_CACHE)
+        
+        # Handle /warmup path or GET request (health check)
+        if path.endswith('/warmup') or request.method == 'GET':
+            return jsonify({"status": "ready"})
+        
+        # Main POST logic for epitope matching
+        if request.method == 'POST':
+            request_json = request.get_json(silent=True)
+            if request_json is None:
+                return make_response(jsonify({"error": "Bad Request: Request body must be valid JSON."}), 400)
             
-            else:
-                response_data = json.dumps({"error": "Method Not Allowed"})
-                status_code = 405
+            input_alleles = set(request_json.get("input_alleles", []))
+            recipient_hla = set(request_json.get("recipient_hla", []))
 
-            response = make_response(response_data, status_code)
-            response.headers["Content-Type"] = content_type
+            if not input_alleles:
+                return make_response(jsonify({"error": "Bad Request: `input_alleles` array is required."}), 400)
             
-            # Apply CORS headers via flask-cors (this is a bit manual in Cloud Functions
-            # but using flask-cors logic ensures consistency)
-            return app.process_response(response)
+            # process_epitope_matching is CPU bound
+            results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
+            return jsonify(results)
+        
+        return make_response(jsonify({"error": "Method Not Allowed"}), 405)
 
-        except Exception as e:
-            print(f"Error in fetch_bq_epitopes: {e}")
-            error_response = make_response(json.dumps({"error": f"Internal Server Error: {str(e)}"}), 500)
-            error_response.headers["Content-Type"] = "application/json"
-            return app.process_response(error_response)
+    except Exception as e:
+        print(f"Error in fetch_bq_epitopes: {e}")
+        return make_response(jsonify({"error": f"Internal Server Error: {str(e)}"}), 500)
