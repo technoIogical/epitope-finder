@@ -176,15 +176,28 @@ def process_epitope_matching(data, input_alleles, recipient_hla):
 app = Flask(__name__)
 
 @functions_framework.http
-@cross_origin()
 def fetch_bq_epitopes(request):
     """
     HTTP Cloud Function that retrieves epitope data from BigQuery (lazily cached),
     computes matches against input alleles, and returns the sorted results.
     """
+    print(f"Request: method={request.method}, path={request.path}, headers={dict(request.headers)}")
+    
     # Handle CORS preflight request (OPTIONS)
     if request.method == 'OPTIONS':
-        return make_response('', 204)
+        print("Handling OPTIONS preflight")
+        response = make_response('', 204)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Max-Age'] = '3600'
+        return response
+
+    def add_cors_headers(resp):
+        if not isinstance(resp, (Flask.response_class,)):
+            resp = make_response(resp)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
 
     try:
         # Ensure cache is populated if empty
@@ -192,40 +205,58 @@ def fetch_bq_epitopes(request):
             load_epitope_data()
             
         # Normalize path by removing trailing slashes for consistent matching
-        path = request.path.rstrip('/')
+        path = request.path.rstrip('/') or '/'
 
         # Handle /robots.txt
         if path.endswith('/robots.txt'):
             response = make_response("User-agent: *\nDisallow: /", 200)
             response.headers["Content-Type"] = "text/plain"
-            return response
+            return add_cors_headers(response)
         
         # Handle /alleles endpoint
         if path.endswith('/alleles'):
-            return jsonify(ALLELE_CACHE)
+            return add_cors_headers(jsonify(ALLELE_CACHE))
         
-        # Handle /warmup path or GET request (health check)
-        if path.endswith('/warmup') or request.method == 'GET':
-            return jsonify({"status": "ready"})
-        
+        # Handle /root (/) or /warmup
+        if path == '/' or path.endswith('/warmup'):
+            if request.method == 'GET':
+                return add_cors_headers(jsonify({"status": "ready"}))
+            elif request.method == 'POST':
+                # Fall through to POST logic below if it's a POST to root
+                pass
+            else:
+                return add_cors_headers(make_response(jsonify({"error": "Method Not Allowed"}), 405))
+
         # Main POST logic for epitope matching
         if request.method == 'POST':
             request_json = request.get_json(silent=True)
             if request_json is None:
-                return make_response(jsonify({"error": "Bad Request: Request body must be valid JSON."}), 400)
+                print("Error: Request body is not valid JSON")
+                return add_cors_headers(make_response(jsonify({"error": "Bad Request: Request body must be valid JSON."}), 400))
             
-            input_alleles = set(request_json.get("input_alleles", []))
-            recipient_hla = set(request_json.get("recipient_hla", []))
+            # Use lists for logging, but sets for processing
+            raw_input = request_json.get("input_alleles", [])
+            raw_recipient = request_json.get("recipient_hla", [])
+            
+            print(f"Processing POST: input_alleles_count={len(raw_input)}, recipient_hla_count={len(raw_recipient)}")
+
+            if not isinstance(raw_input, list):
+                 return add_cors_headers(make_response(jsonify({"error": "Bad Request: `input_alleles` must be an array."}), 400))
+
+            input_alleles = {str(a).strip() for a in raw_input if a and str(a).strip()}
+            recipient_hla = {str(a).strip() for a in raw_recipient if a and str(a).strip()}
 
             if not input_alleles:
-                return make_response(jsonify({"error": "Bad Request: `input_alleles` array is required."}), 400)
+                print("Error: Empty or missing input_alleles")
+                return add_cors_headers(make_response(jsonify({"error": "Bad Request: `input_alleles` array is required and cannot be empty."}), 400))
             
             # process_epitope_matching is CPU bound
             results = process_epitope_matching(EPITOPE_DATA, input_alleles, recipient_hla)
-            return jsonify(results)
+            print(f"Returning {len(results)} results")
+            return add_cors_headers(jsonify(results))
         
-        return make_response(jsonify({"error": "Method Not Allowed"}), 405)
+        return add_cors_headers(make_response(jsonify({"error": "Method Not Allowed"}), 405))
 
     except Exception as e:
         print(f"Error in fetch_bq_epitopes: {e}")
-        return make_response(jsonify({"error": f"Internal Server Error: {str(e)}"}), 500)
+        return add_cors_headers(make_response(jsonify({"error": f"Internal Server Error: {str(e)}"}), 500))
