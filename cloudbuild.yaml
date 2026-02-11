@@ -39,12 +39,6 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--memory'
-      - '512Mi'
-      - '--cpu'
-      - '1'
-      - '--concurrency'
-      - '80'
 
 options:
   logging: CLOUD_LOGGING_ONLY
