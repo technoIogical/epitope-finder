@@ -62,6 +62,7 @@ def fetch_bq_epitopes(request):
 
     input_alleles = request_json.get("input_alleles", [])
     recipient_hla = request_json.get("recipient_hla", [])
+    donor_hla = request_json.get("donor_hla", [])
 
     if not input_alleles:
         return ("Bad Request: `input_alleles` array is required.", 400, headers)
@@ -77,13 +78,28 @@ def fetch_bq_epitopes(request):
     recipient_hla_list AS (
       SELECT allele FROM UNNEST(@recipient_hla) AS allele
     ),
+
+    donor_hla_list AS (
+      SELECT allele FROM UNNEST(@donor_hla) AS allele
+    ),
+
+    -- Pre-filter rows to only those with at least one antibody match
+    filtered_rows AS (
+      SELECT *
+      FROM `epitopefinder-458404`.epitopes.HLA_data AS t
+      WHERE EXISTS (
+        SELECT 1 FROM UNNEST(t.alleles) AS a
+        WHERE a IN (SELECT allele FROM user_antibodies)
+      )
+    ),
     
     matches AS (
       SELECT
         t.epitope_id AS `Epitope ID`,
         t.epitope_name AS `Epitope Name`,
         t.locus AS Locus,
-        t.alleles AS All_Epitope_Alleles, 
+        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN (SELECT allele FROM recipient_hla_list)) AS cached_hasS,
+        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN (SELECT allele FROM donor_hla_list)) AS cached_hasD,
         ARRAY(
           SELECT allele FROM UNNEST(t.alleles) AS allele
           WHERE allele IN (SELECT allele FROM user_antibodies)
@@ -96,7 +112,7 @@ def fetch_bq_epitopes(request):
             required_allele NOT IN (SELECT allele FROM user_antibodies)
         ) AS `Missing Required Alleles`
       FROM
-        `epitopefinder-458404`.epitopes.HLA_data AS t
+        filtered_rows AS t
     )
     
     SELECT
@@ -112,8 +128,6 @@ def fetch_bq_epitopes(request):
       ) AS `Self_Match_Count`
     FROM
       matches
-    WHERE
-      ARRAY_LENGTH(`Positive Matches`) > 0
     ORDER BY
       -- RANKING LOGIC:
       `Self_Match_Count` ASC,              -- 1. Least "S" on top
@@ -125,6 +139,7 @@ def fetch_bq_epitopes(request):
         query_parameters=[
             bigquery.ArrayQueryParameter("input_alleles", "STRING", input_alleles),
             bigquery.ArrayQueryParameter("recipient_hla", "STRING", recipient_hla),
+            bigquery.ArrayQueryParameter("donor_hla", "STRING", donor_hla),
         ]
     )
 
