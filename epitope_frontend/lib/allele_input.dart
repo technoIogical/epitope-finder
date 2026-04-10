@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Added for hardware key events
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 
@@ -34,12 +35,53 @@ class _AlleleInputState extends State<AlleleInput> {
   final TextEditingController _controller = TextEditingController();
   late final FocusNode _internalFocusNode;
   bool _isFocused = false;
+  DateTime? _backspaceStartTime;
 
   @override
   void initState() {
     super.initState();
     _internalFocusNode = widget.focusNode ?? FocusNode();
     _internalFocusNode.addListener(_handleFocusChange);
+
+    // --- HARDWARE KEY LISTENER FOR BACKSPACE DELETION ---
+    _internalFocusNode.onKeyEvent = (FocusNode node, KeyEvent event) {
+      if (event.logicalKey == LogicalKeyboardKey.backspace) {
+        // Only trigger chip deletion if the text field is completely empty
+        if (_controller.text.isEmpty && widget.selectedAlleles.isNotEmpty) {
+          if (event is KeyDownEvent || event is KeyRepeatEvent) {
+            _backspaceStartTime ??= DateTime.now();
+            final holdDuration = DateTime.now().difference(_backspaceStartTime!);
+
+            setState(() {
+              int deleteCount = 1;
+              
+              // Gradual escalation logic based on hold time
+              if (holdDuration.inSeconds >= 5) {
+                deleteCount = widget.selectedAlleles.length; // 5+ secs: Nuke all
+              } else if (holdDuration.inSeconds >= 3) {
+                deleteCount = 5; // 3+ secs: Delete in chunks of 5
+              }
+
+              for (int i = 0; i < deleteCount; i++) {
+                if (widget.selectedAlleles.isNotEmpty) {
+                  widget.selectedAlleles.removeLast();
+                }
+              }
+            });
+
+            widget.onChanged();
+            return KeyEventResult.handled;
+          } else if (event is KeyUpEvent) {
+            _backspaceStartTime = null;
+          }
+        } else {
+          _backspaceStartTime = null; // Reset if they start typing
+        }
+      } else if (event is KeyUpEvent) {
+        _backspaceStartTime = null;
+      }
+      return KeyEventResult.ignored;
+    };
   }
 
   void _handleFocusChange() {
@@ -287,7 +329,6 @@ class _AlleleInputState extends State<AlleleInput> {
                             ],
                           ),
                         )),
-                      // The corrected, single SizedBox and TextField
                       SizedBox(
                         width: 150,
                         child: TextField(
