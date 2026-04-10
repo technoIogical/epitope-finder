@@ -75,85 +75,76 @@ def fetch_bq_epitopes(request):
 
     query = """
     WITH 
-    -- 1. Resolve Antibody Serotypes
+    -- 1. Resolve Antibody Serotypes into a single array
     resolved_antibodies AS (
-      SELECT DISTINCT allele
+      SELECT ARRAY_AGG(DISTINCT allele) AS arr
       FROM UNNEST(@input_alleles) AS val
       LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
       CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
     ),
-    user_antibodies AS (
-      SELECT allele FROM resolved_antibodies
-    ),
     
-    -- 2. Resolve Recipient Serotypes
+    -- 2. Resolve Recipient Serotypes into a single array
     resolved_recipient AS (
-      SELECT DISTINCT allele
+      SELECT ARRAY_AGG(DISTINCT allele) AS arr
       FROM UNNEST(@recipient_hla) AS val
       LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
       CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
     ),
-    recipient_hla_list AS (
-      SELECT allele FROM resolved_recipient
-    ),
 
-    -- 3. Resolve Donor Serotypes
+    -- 3. Resolve Donor Serotypes into a single array
     resolved_donor AS (
-      SELECT DISTINCT allele
+      SELECT ARRAY_AGG(DISTINCT allele) AS arr
       FROM UNNEST(@donor_hla) AS val
       LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
       CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
     ),
-    donor_hla_list AS (
-      SELECT allele FROM resolved_donor
-    ),
 
-    -- Pre-filter rows to only those with at least one antibody match
+    -- Pre-filter rows
     filtered_rows AS (
-      SELECT 
-        epitope_name, 
-        alleles, 
-        required_alleles
+      SELECT t.epitope_name, t.alleles, t.required_alleles, ra.arr AS user_arr, rr.arr AS recipient_arr, rd.arr AS donor_arr
       FROM `epitopefinder-458404`.epitopes.HLA_data AS t
+      CROSS JOIN resolved_antibodies AS ra
+      CROSS JOIN resolved_recipient AS rr
+      CROSS JOIN resolved_donor AS rd
       WHERE EXISTS (
         SELECT 1 FROM UNNEST(t.alleles) AS a
-        WHERE a IN (SELECT allele FROM user_antibodies)
+        WHERE a IN UNNEST(ra.arr)
       )
     ),
     
     matches AS (
       SELECT
         t.epitope_name AS `Epitope Name`,
-        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN (SELECT allele FROM recipient_hla_list)) AS cached_hasS,
-        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN (SELECT allele FROM donor_hla_list)) AS cached_hasD,
+        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN UNNEST(t.recipient_arr)) AS cached_hasS,
+        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN UNNEST(t.donor_arr)) AS cached_hasD,
         ARRAY(
-          SELECT allele FROM UNNEST(t.alleles) AS allele
-          WHERE allele IN (SELECT allele FROM user_antibodies)
+          SELECT a FROM UNNEST(t.alleles) AS a
+          WHERE a IN UNNEST(t.user_arr)
         ) AS `Positive Matches`,
         ARRAY(
-          SELECT required_allele FROM UNNEST(t.required_alleles) AS required_allele
+          SELECT ra FROM UNNEST(t.required_alleles) AS ra
           WHERE
-            required_allele IS NOT NULL AND
-            required_allele != '' AND
-            required_allele NOT IN (SELECT allele FROM user_antibodies)
-        ) AS `Missing Required Alleles`
+            ra IS NOT NULL AND
+            ra != '' AND
+            ra NOT IN UNNEST(t.user_arr)
+        ) AS `Missing Required Alleles`,
+        t.recipient_arr -- pass it through
       FROM
         filtered_rows AS t
     )
     
     SELECT
-      *,
+      * EXCEPT(recipient_arr),
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
       CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`,
       
-      -- CALCULATION: How many "S" (Self) alleles are in the positive matches?
       (
         SELECT COUNT(1) 
         FROM UNNEST(`Positive Matches`) AS pm
-        WHERE pm IN (SELECT allele FROM recipient_hla_list)
+        WHERE pm IN UNNEST(m.recipient_arr)
       ) AS `Self_Match_Count`
     FROM
-      matches
+      matches AS m
     ORDER BY
       -- RANKING LOGIC:
       `Self_Match_Count` ASC,              -- 1. Least "S" on top

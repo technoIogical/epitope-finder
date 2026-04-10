@@ -6,7 +6,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         description,
         alleles, 
         required_alleles,
-        locus 
+        locus,
+        theoretical
     )
     SELECT
         ID AS epitope_id,
@@ -14,7 +15,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         Description AS description,
         Alleles, 
         `Required Alleles`,
-        'ABC' AS locus
+        'ABC' AS locus,
+        FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_ABC;
 
@@ -24,7 +26,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         description,
         alleles, 
         required_alleles,
-        locus
+        locus,
+        theoretical
     )
     SELECT
         ID AS epitope_id,
@@ -32,7 +35,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         Description AS description,
         Alleles,
         `Required Alleles`,
-        'DQ' AS locus
+        'DQ' AS locus,
+        FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_DQ;
 
@@ -42,7 +46,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         description,
         alleles, 
         required_alleles,
-        locus
+        locus,
+        theoretical
     )
     SELECT
         ID AS epitope_id,
@@ -50,7 +55,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         Description AS description,
         Alleles,
         `Required Alleles`,
-        'DRB' AS locus
+        'DRB' AS locus,
+        FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_DRB;
 
@@ -60,7 +66,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         description,
         alleles, 
         required_alleles,
-        locus 
+        locus,
+        theoretical
     )
     SELECT
         ID AS epitope_id,
@@ -68,7 +75,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         Description AS description,
         Alleles,
         `Required Alleles`,
-        'MICA' AS locus
+        'MICA' AS locus,
+        FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_MICA;
 
@@ -78,7 +86,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         description,
         alleles, 
         required_alleles,
-        locus 
+        locus,
+        theoretical
     )
     SELECT
         ID AS epitope_id,
@@ -86,16 +95,19 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         Description AS description,
         Alleles,
         `Required Alleles`,
-        'DP' AS locus
+        'DP' AS locus,
+        FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_DP;
+
     INSERT INTO `epitopefinder-458404`.epitopes.HLA_data (
         epitope_id,
         epitope_name,
         description,
         alleles, 
         required_alleles,
-        locus 
+        locus,
+        theoretical
     )
     SELECT
         ID AS epitope_id,
@@ -103,7 +115,8 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         Description AS description,
         Alleles,
         `Required Alleles`,
-        'DRDQDP' AS locus
+        'DRDQDP' AS locus,
+        FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_DRDQDP;
     
