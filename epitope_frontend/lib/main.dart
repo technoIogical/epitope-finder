@@ -218,8 +218,14 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           return;
         }
 
-        List<String> positiveCols = List.from(_selectedAntibodies)..sort();
-        _userAllelesSet = _selectedAntibodies.toSet();
+        // Get expanded antibodies from the first row of results
+        final List<String> expandedAntibodies = List<String>.from(
+          rawProcessedRows.first['expanded_input_alleles'] ??
+              _selectedAntibodies,
+        );
+
+        List<String> positiveCols = List.from(expandedAntibodies)..sort();
+        _userAllelesSet = expandedAntibodies.toSet();
 
         Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
@@ -233,6 +239,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           // Pre-calculate flags
           bool hasS = row['cached_hasS'] == true;
           bool hasD = row['cached_hasD'] == true;
+          bool isTheoretical = row['Theoretical'] == true;
 
           // NEW RATIO MATH FOR SORTING
           int posCount = row['Number of Positive Matches'] ?? 0;
@@ -247,6 +254,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             ...row,
             'cached_hasS': hasS,
             'cached_hasD': hasD,
+            'isTheoretical': isTheoretical,
             'cached_highlightRow': hasS || hasD,
             'cached_positiveMatchesSet': Set<String>.from(
               row['Positive Matches'] ?? [],
@@ -479,6 +487,21 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
+                    "(T)",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade900,
+                      fontSize: 12,
+                    ),
+                  ),
+                  SizedBox(width: 4),
+                  Text("= Theoretical", style: TextStyle(fontSize: 12)),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
                     "S",
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
@@ -560,6 +583,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                             row['Epitope Name'] ?? '',
                             nameWidth,
                             bgColor: nameBgColor,
+                            isTheoretical: row['isTheoretical'] == true,
                           ),
                           _fixedCell(
                             row['Number of Positive Matches'].toString(),
@@ -750,6 +774,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     Color? textColor,
     Color? bgColor,
     String? sortKey,
+    bool isTheoretical = false,
   }) {
     bool isSorted = sortKey != null && _sortColumn == sortKey;
 
@@ -772,15 +797,28 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Expanded(
-              child: Text(
-                text,
+              child: RichText(
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
-                  color: textColor ?? Colors.black87,
-                  fontSize: isHeader ? 12 : 11,
-                ),
                 overflow: TextOverflow.ellipsis,
+                text: TextSpan(
+                  style: TextStyle(
+                    fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+                    color: textColor ?? Colors.black87,
+                    fontSize: isHeader ? 12 : 11,
+                  ),
+                  children: [
+                    TextSpan(text: text),
+                    if (isTheoretical)
+                      TextSpan(
+                        text: ' (T)',
+                        style: TextStyle(
+                          color: Colors.blue,
+                          fontSize: (isHeader ? 12 : 11) * 0.8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             if (isHeader && sortKey != null)

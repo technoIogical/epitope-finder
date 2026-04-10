@@ -101,7 +101,7 @@ def fetch_bq_epitopes(request):
 
     -- Pre-filter rows
     filtered_rows AS (
-      SELECT t.epitope_name, t.alleles, t.required_alleles, ra.arr AS user_arr, rr.arr AS recipient_arr, rd.arr AS donor_arr
+      SELECT t.epitope_name, t.alleles, t.required_alleles, t.theoretical, ra.arr AS user_arr, rr.arr AS recipient_arr, rd.arr AS donor_arr
       FROM `epitopefinder-458404`.epitopes.HLA_data AS t
       CROSS JOIN resolved_antibodies AS ra
       CROSS JOIN resolved_recipient AS rr
@@ -115,6 +115,7 @@ def fetch_bq_epitopes(request):
     matches AS (
       SELECT
         t.epitope_name AS `Epitope Name`,
+        t.theoretical AS `Theoretical`,
         EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN UNNEST(t.recipient_arr)) AS cached_hasS,
         EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN UNNEST(t.donor_arr)) AS cached_hasD,
         ARRAY(
@@ -135,6 +136,7 @@ def fetch_bq_epitopes(request):
     
     SELECT
       * EXCEPT(recipient_arr),
+      (SELECT arr FROM resolved_antibodies) AS expanded_input_alleles,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
       CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`,
       

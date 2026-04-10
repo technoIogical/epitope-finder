@@ -119,4 +119,23 @@ TRUNCATE TABLE `epitopefinder-458404`.epitopes.HLA_data;
         FALSE AS theoretical
     FROM
         `epitopefinder-458404`.epitopes.raw_DRDQDP;
-    
+
+    INSERT INTO `epitopefinder-458404`.epitopes.HLA_data (
+        epitope_id,
+        epitope_name,
+        description,
+        alleles, 
+        required_alleles,
+        locus,
+        theoretical
+    )
+    SELECT
+        epitope_id,
+        epitope_name,
+        description,
+        alleles,
+        required_alleles,
+        locus,
+        theoretical
+    FROM
+        `epitopefinder-458404`.epitopes.raw_theoretical;
