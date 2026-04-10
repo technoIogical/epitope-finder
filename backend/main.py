@@ -17,16 +17,20 @@ def load_allele_cache():
 
     client = bigquery.Client(project=PROJECT_ID)
 
-    # Fetch Allele List
-    logger.info("Loading allele list from BigQuery...")
+    # Fetch Allele List and Serotype List for autocomplete
+    logger.info("Loading autocomplete list from BigQuery...")
     try:
-        query = "SELECT allele_name FROM `epitopefinder-458404`.epitopes.allele_list ORDER BY allele_name"
-        query_job = client.query(query)
-        # Use tuple for immutable, smaller cache
-        ALLELE_CACHE = tuple(row["allele_name"] for row in query_job.result())
-        logger.info(f"Successfully loaded {len(ALLELE_CACHE)} allele names.")
+        query_alleles = "SELECT allele_name FROM `epitopefinder-458404`.epitopes.allele_list"
+        query_serotypes = "SELECT DISTINCT serotype FROM `epitopefinder-458404`.epitopes.serotype_mapping"
+        
+        alleles = [row["allele_name"] for row in client.query(query_alleles).result()]
+        serotypes = [row["serotype"] for row in client.query(query_serotypes).result()]
+        
+        # Combine, remove duplicates, and sort
+        ALLELE_CACHE = tuple(sorted(list(set(alleles + serotypes))))
+        logger.info(f"Successfully loaded {len(ALLELE_CACHE)} autocomplete items.")
     except Exception as e:
-        logger.error(f"Error loading allele list from BigQuery: {e}")
+        logger.error(f"Error loading autocomplete list: {e}")
         raise e
 
     return ALLELE_CACHE
@@ -71,21 +75,45 @@ def fetch_bq_epitopes(request):
 
     query = """
     WITH 
+    -- 1. Resolve Antibody Serotypes
+    resolved_antibodies AS (
+      SELECT DISTINCT expanded_allele
+      FROM UNNEST(@input_alleles) AS val
+      LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
+      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+    ),
     user_antibodies AS (
-      SELECT allele FROM UNNEST(@input_alleles) AS allele
+      SELECT allele FROM resolved_antibodies
     ),
     
+    -- 2. Resolve Recipient Serotypes
+    resolved_recipient AS (
+      SELECT DISTINCT expanded_allele
+      FROM UNNEST(@recipient_hla) AS val
+      LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
+      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+    ),
     recipient_hla_list AS (
-      SELECT allele FROM UNNEST(@recipient_hla) AS allele
+      SELECT allele FROM resolved_recipient
     ),
 
+    -- 3. Resolve Donor Serotypes
+    resolved_donor AS (
+      SELECT DISTINCT expanded_allele
+      FROM UNNEST(@donor_hla) AS val
+      LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
+      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+    ),
     donor_hla_list AS (
-      SELECT allele FROM UNNEST(@donor_hla) AS allele
+      SELECT allele FROM resolved_donor
     ),
 
     -- Pre-filter rows to only those with at least one antibody match
     filtered_rows AS (
-      SELECT *
+      SELECT 
+        epitope_name, 
+        alleles, 
+        required_alleles
       FROM `epitopefinder-458404`.epitopes.HLA_data AS t
       WHERE EXISTS (
         SELECT 1 FROM UNNEST(t.alleles) AS a
@@ -95,9 +123,7 @@ def fetch_bq_epitopes(request):
     
     matches AS (
       SELECT
-        t.epitope_id AS `Epitope ID`,
         t.epitope_name AS `Epitope Name`,
-        t.locus AS Locus,
         EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN (SELECT allele FROM recipient_hla_list)) AS cached_hasS,
         EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN (SELECT allele FROM donor_hla_list)) AS cached_hasD,
         ARRAY(

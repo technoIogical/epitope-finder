@@ -1,4 +1,4 @@
-extracted/*
+scraper_program/extracted/*
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 main_manual.py
 backendtester.py
+tmp

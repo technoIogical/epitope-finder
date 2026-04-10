@@ -50,14 +50,16 @@ class _AlleleInputState extends State<AlleleInput> {
         if (_controller.text.isEmpty && widget.selectedAlleles.isNotEmpty) {
           if (event is KeyDownEvent || event is KeyRepeatEvent) {
             _backspaceStartTime ??= DateTime.now();
-            final holdDuration = DateTime.now().difference(_backspaceStartTime!);
+            final holdDuration =
+                DateTime.now().difference(_backspaceStartTime!);
 
             setState(() {
               int deleteCount = 1;
-              
+
               // Gradual escalation logic based on hold time
               if (holdDuration.inSeconds >= 5) {
-                deleteCount = widget.selectedAlleles.length; // 5+ secs: Nuke all
+                deleteCount =
+                    widget.selectedAlleles.length; // 5+ secs: Nuke all
               } else if (holdDuration.inSeconds >= 3) {
                 deleteCount = 5; // 3+ secs: Delete in chunks of 5
               }
@@ -175,7 +177,7 @@ class _AlleleInputState extends State<AlleleInput> {
   void _processMultiInput(String input, TextEditingController controller) {
     // Split by commas, spaces, newlines, or tabs
     final rawEntries = input.split(RegExp(r'[,\s\n\t]+'));
-    
+
     // Filter out empty spaces and explicit dashes
     final validAlleles = rawEntries
         .map((entry) => entry.trim())
@@ -200,7 +202,7 @@ class _AlleleInputState extends State<AlleleInput> {
     if (changed) {
       widget.onChanged();
     }
-    
+
     // Clear the text field after successful processing
     controller.clear();
   }
@@ -295,40 +297,57 @@ class _AlleleInputState extends State<AlleleInput> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       ...widget.selectedAlleles.map(
-                        (allele) => Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(2),
-                            border: Border.all(color: Colors.grey.shade400),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                allele,
-                                style: const TextStyle(fontSize: 12),
+                        (allele) {
+                          final bool isSerotype = !allele.contains('*');
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSerotype
+                                  ? Colors.blue[100]
+                                  : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(2),
+                              border: Border.all(
+                                color: isSerotype
+                                    ? Colors.blue.shade300
+                                    : Colors.grey.shade400,
                               ),
-                              const SizedBox(width: 4),
-                              InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    widget.selectedAlleles.remove(allele);
-                                    widget.onChanged();
-                                  });
-                                },
-                                child: const Icon(
-                                  Icons.close,
-                                  size: 14,
-                                  color: Colors.grey,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  allele,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isSerotype
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        )),
+                                const SizedBox(width: 4),
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      widget.selectedAlleles.remove(allele);
+                                      widget.onChanged();
+                                    });
+                                  },
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 14,
+                                    color: isSerotype
+                                        ? Colors.blue[900]
+                                        : Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                       SizedBox(
                         width: 150,
                         child: TextField(
@@ -337,7 +356,9 @@ class _AlleleInputState extends State<AlleleInput> {
                           onChanged: (val) {
                             setState(() {});
                             // Instantly catch pasted tabular data (commas, tabs, newlines)
-                            if (val.contains(',') || val.contains('\n') || val.contains('\t')) {
+                            if (val.contains(',') ||
+                                val.contains('\n') ||
+                                val.contains('\t')) {
                               _processMultiInput(val, controller);
                             }
                           },
@@ -348,7 +369,9 @@ class _AlleleInputState extends State<AlleleInput> {
                           ),
                           onSubmitted: (value) {
                             // Catch entries submitted via Enter key with spaces or dashes
-                            if (value.contains(',') || value.contains(' ') || value.contains('-')) {
+                            if (value.contains(',') ||
+                                value.contains(' ') ||
+                                value.contains('-')) {
                               _processMultiInput(value, controller);
                             } else if (value.isNotEmpty &&
                                 widget.allAlleles.contains(value)) {

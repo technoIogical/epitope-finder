@@ -207,9 +207,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       if (response.statusCode == 200) {
         final List<dynamic> rawRows = jsonDecode(response.body);
 
-        List<Map<String, dynamic>> rawProcessedRows = rawRows
-            .map((e) => e as Map<String, dynamic>)
-            .toList();
+        List<Map<String, dynamic>> rawProcessedRows =
+            rawRows.map((e) => e as Map<String, dynamic>).toList();
 
         if (rawProcessedRows.isEmpty) {
           setState(() {
@@ -238,10 +237,11 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           // NEW RATIO MATH FOR SORTING
           int posCount = row['Number of Positive Matches'] ?? 0;
           int negCount = row['Number of Missing Required Alleles'] ?? 0;
-          
-          // Calculate the ratio. If neg is 0, give it a massive multiplier 
+
+          // Calculate the ratio. If neg is 0, give it a massive multiplier
           // so perfect matches (0 missing) are prioritized at the top.
-          double matchRatio = negCount == 0 ? (posCount * 1000.0) : (posCount / negCount);
+          double matchRatio =
+              negCount == 0 ? (posCount * 1000.0) : (posCount / negCount);
 
           processedRows.add({
             ...row,
@@ -325,15 +325,13 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             const SingleActivator(
               LogicalKeyboardKey.equal,
               control: true,
-            ): () =>
-                _updateZoom(0.1),
+            ): () => _updateZoom(0.1),
             const SingleActivator(LogicalKeyboardKey.add, control: true): () =>
                 _updateZoom(0.1),
             const SingleActivator(
               LogicalKeyboardKey.minus,
               control: true,
-            ): () =>
-                _updateZoom(-0.1),
+            ): () => _updateZoom(-0.1),
             const SingleActivator(LogicalKeyboardKey.equal, alt: true): () =>
                 _updateZoom(0.1),
             const SingleActivator(LogicalKeyboardKey.minus, alt: true): () =>
@@ -355,17 +353,18 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     child: _isLoading
                         ? Center(child: CircularProgressIndicator())
                         : _errorMessage.isNotEmpty
-                        ? Center(
-                            child: Text(
-                              _errorMessage,
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          )
-                        : _epitopeResults.isEmpty
-                        ? Center(
-                            child: Text('Enter antibodies to view matrix.'),
-                          )
-                        : _buildMatrixContent(),
+                            ? Center(
+                                child: Text(
+                                  _errorMessage,
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              )
+                            : _epitopeResults.isEmpty
+                                ? Center(
+                                    child: Text(
+                                        'Enter antibodies to view matrix.'),
+                                  )
+                                : _buildMatrixContent(),
                   ),
                   _buildFooter(),
                 ],
@@ -455,7 +454,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         border: Border.all(color: Colors.grey.shade300),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: Offset(0, 2),
           ),
@@ -545,9 +544,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     final row = _epitopeResults[index];
                     final bool highlightRow =
                         row['cached_highlightRow'] ?? false;
-                    final Color nameBgColor = highlightRow
-                        ? Colors.pink.shade100
-                        : Colors.white;
+                    final Color nameBgColor =
+                        highlightRow ? Colors.pink.shade100 : Colors.white;
                     return Container(
                       height: currentCellHeight,
                       decoration: BoxDecoration(
@@ -670,9 +668,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   allele,
                   style: TextStyle(
                     fontSize: currentFontSize,
-                    fontWeight: isUserAllele
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    fontWeight:
+                        isUserAllele ? FontWeight.bold : FontWeight.normal,
                     color: isUserAllele ? Colors.black : Colors.grey[700],
                   ),
                 ),
@@ -790,8 +787,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               Icon(
                 isSorted
                     ? (_sortAscending
-                          ? Icons.arrow_upward
-                          : Icons.arrow_downward)
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward)
                     : Icons.sort,
                 size: 12,
                 color: isSorted ? Colors.blue : Colors.grey,
