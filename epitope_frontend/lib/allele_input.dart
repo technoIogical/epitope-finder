@@ -50,38 +50,6 @@ class _AlleleInputState extends State<AlleleInput> {
     }
   }
 
-  void _handleTextInput(String val, TextEditingController controller) {
-    if (val.contains(',')) {
-      final List<String> parts = val.split(',');
-      bool changed = false;
-
-      for (String part in parts) {
-        final String trimmed = part.trim();
-        if (trimmed.isEmpty) continue;
-
-        final String match = widget.allAlleles.firstWhere(
-          (a) => a.toLowerCase() == trimmed.toLowerCase(),
-          orElse: () => '',
-        );
-
-        if (match.isNotEmpty) {
-          if (!widget.selectedAlleles.contains(match)) {
-            widget.selectedAlleles.add(match);
-            changed = true;
-          }
-        }
-      }
-
-      if (changed) {
-        widget.onChanged();
-      }
-      controller.clear();
-      setState(() {});
-    } else {
-      setState(() {});
-    }
-  }
-
   // ── File Upload Logic ──────────────────
   Future<void> _pickAndParseFile() async {
     try {
@@ -319,53 +287,34 @@ class _AlleleInputState extends State<AlleleInput> {
                             ],
                           ),
                         )),
-                    SizedBox(
-                      width: 150,
-                      child: TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        onChanged: (val) {
-                          setState(() {});
-                          // Instantly catch pasted tabular data (commas, tabs, newlines)
-                          if (val.contains(',') || val.contains('\n') || val.contains('\t')) {
-                            _processMultiInput(val, controller);
-                          }
-                        },
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 8),
-                        ),
-                        onSubmitted: (value) {
-                          // Catch entries submitted via Enter key with spaces or dashes
-                          if (value.contains(',') || value.contains(' ') || value.contains('-')) {
-                            _processMultiInput(value, controller);
-                          } else if (value.isNotEmpty &&
-                              widget.allAlleles.contains(value)) {
-                            onFieldSubmitted(); // Standard autocomplete behavior
-                          } else {
-                            // Catch-all for a single allele manually typed without Autocomplete
-                            _processMultiInput(value, controller);
-                          }
-                        },
-                      ),
+                      // The corrected, single SizedBox and TextField
                       SizedBox(
                         width: 150,
                         child: TextField(
                           controller: controller,
                           focusNode: focusNode,
-                          onChanged: (val) => _handleTextInput(val, controller),
+                          onChanged: (val) {
+                            setState(() {});
+                            // Instantly catch pasted tabular data (commas, tabs, newlines)
+                            if (val.contains(',') || val.contains('\n') || val.contains('\t')) {
+                              _processMultiInput(val, controller);
+                            }
+                          },
                           decoration: const InputDecoration(
                             border: InputBorder.none,
                             isDense: true,
-                            contentPadding: EdgeInsets.symmetric(
-                              vertical: 8,
-                            ),
+                            contentPadding: EdgeInsets.symmetric(vertical: 8),
                           ),
                           onSubmitted: (value) {
-                            if (value.isNotEmpty &&
+                            // Catch entries submitted via Enter key with spaces or dashes
+                            if (value.contains(',') || value.contains(' ') || value.contains('-')) {
+                              _processMultiInput(value, controller);
+                            } else if (value.isNotEmpty &&
                                 widget.allAlleles.contains(value)) {
-                              onFieldSubmitted();
+                              onFieldSubmitted(); // Standard autocomplete behavior
+                            } else {
+                              // Catch-all for a single allele manually typed without Autocomplete
+                              _processMultiInput(value, controller);
                             }
                           },
                         ),
