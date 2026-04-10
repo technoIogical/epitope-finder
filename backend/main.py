@@ -129,14 +129,15 @@ def fetch_bq_epitopes(request):
             ra != '' AND
             ra NOT IN UNNEST(t.user_arr)
         ) AS `Missing Required Alleles`,
-        t.recipient_arr -- pass it through
+        t.recipient_arr, -- pass it through
+        t.user_arr       -- pass expanded user alleles through
       FROM
         filtered_rows AS t
     )
     
     SELECT
-      * EXCEPT(recipient_arr),
-      (SELECT arr FROM resolved_antibodies) AS expanded_input_alleles,
+      * EXCEPT(recipient_arr, user_arr),
+      user_arr AS expanded_input_alleles,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
       CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`,
       
