@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'allele_input.dart';
+import 'graph_painter.dart';
+import 'graph_header_painter.dart';
 
 void main() {
   runApp(MyApp());
@@ -207,10 +209,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       if (response.statusCode == 200) {
         final List<dynamic> rawRows = jsonDecode(response.body);
 
-        List<Map<String, dynamic>> rawProcessedRows =
-            rawRows.map((e) => e as Map<String, dynamic>).toList();
-
-        if (rawProcessedRows.isEmpty) {
+        if (rawRows.isEmpty) {
           setState(() {
             _isLoading = false;
             _errorMessage = "No antibody matches found.";
@@ -218,11 +217,13 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           return;
         }
 
-        // Get expanded antibodies from the first row of results
-        final List<String> expandedAntibodies = List<String>.from(
-          rawProcessedRows.first['expanded_input_alleles'] ??
-              _selectedAntibodies,
-        );
+        // Defensive conversion of the first row to get expanded alleles
+        final Map<String, dynamic> firstRow =
+            Map<String, dynamic>.from(rawRows.first as Map);
+        final List<String> expandedAntibodies =
+            (firstRow['expanded_input_alleles'] as List? ?? [])
+                .map((e) => e.toString())
+                .toList();
 
         List<String> positiveCols = List.from(expandedAntibodies)..sort();
         _userAllelesSet = expandedAntibodies.toSet();
@@ -230,11 +231,20 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
 
-        for (var row in rawProcessedRows) {
-          final missing = List<String>.from(
-            row['Missing Required Alleles'] ?? [],
-          );
-          negativeColSet.addAll(missing);
+        for (var rawRow in rawRows) {
+          final Map<String, dynamic> row =
+              Map<String, dynamic>.from(rawRow as Map);
+
+          final List<String> positiveMatches =
+              (row['Positive Matches'] as List? ?? [])
+                  .map((e) => e.toString())
+                  .toList();
+          final List<String> missingRequired =
+              (row['Missing Required Alleles'] as List? ?? [])
+                  .map((e) => e.toString())
+                  .toList();
+
+          negativeColSet.addAll(missingRequired);
 
           // Pre-calculate flags
           bool hasS = row['cached_hasS'] == true;
@@ -251,16 +261,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               negCount == 0 ? (posCount * 1000.0) : (posCount / negCount);
 
           processedRows.add({
-            ...row,
+            'Epitope Name': row['Epitope Name'],
             'cached_hasS': hasS,
             'cached_hasD': hasD,
             'isTheoretical': isTheoretical,
             'cached_highlightRow': hasS || hasD,
-            'cached_positiveMatchesSet': Set<String>.from(
-              row['Positive Matches'] ?? [],
-            ),
-            'cached_missingRequiredSet': Set<String>.from(missing),
-            'matchRatio': matchRatio, // Store the ratio for sorting
+            'cached_positiveMatchesSet': positiveMatches.toSet(),
+            'cached_missingRequiredSet': missingRequired.toSet(),
+            'matchRatio': matchRatio,
+            'Number of Positive Matches': posCount,
+            'Number of Missing Required Alleles': negCount,
           });
         }
 
@@ -671,45 +681,35 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   }
 
   Widget _buildScrollableHeader() {
-    return Container(
-      height: currentHeaderHeight,
-      color: Colors.grey[200],
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: _sortedColumns.map((allele) {
-          bool isUserAllele = _userAllelesSet.contains(allele);
-          return Container(
-            width: currentCellWidth,
-            decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: Colors.grey.shade300)),
+    return AnimatedBuilder(
+      animation: _horizontalScrollController,
+      builder: (context, child) {
+        return Container(
+          height: currentHeaderHeight,
+          color: Colors.grey[200],
+          child: CustomPaint(
+            size: Size(
+                _sortedColumns.length * currentCellWidth, currentHeaderHeight),
+            painter: GraphHeaderPainter(
+              columns: _sortedColumns,
+              userAllelesSet: _userAllelesSet,
+              cellWidth: currentCellWidth,
+              fontSize: currentFontSize,
+              scrollOffset: _horizontalScrollController.hasClients
+                  ? _horizontalScrollController.offset
+                  : 0.0,
             ),
-            child: RotatedBox(
-              quarterTurns: 3,
-              child: Container(
-                alignment: Alignment.centerLeft,
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  allele,
-                  style: TextStyle(
-                    fontSize: currentFontSize,
-                    fontWeight:
-                        isUserAllele ? FontWeight.bold : FontWeight.normal,
-                    color: isUserAllele ? Colors.black : Colors.grey[700],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildScrollableRow(Map<String, dynamic> row) {
     final Set<String> positiveMatches =
-        row['cached_positiveMatchesSet'] ?? <String>{};
+        row['cached_positiveMatchesSet'] as Set<String>? ?? <String>{};
     final Set<String> missingRequired =
-        row['cached_missingRequiredSet'] ?? <String>{};
+        row['cached_missingRequiredSet'] as Set<String>? ?? <String>{};
 
     return Container(
       height: currentCellHeight,
@@ -717,52 +717,27 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
       ),
-      child: Row(
-        children: _sortedColumns.map((allele) {
-          bool isPositive = positiveMatches.contains(allele);
-          bool isMissing = missingRequired.contains(allele);
-
-          Color cellColor = Colors.grey.shade100;
-          if (isPositive) cellColor = Colors.green.shade600;
-          if (isMissing) cellColor = Colors.red.shade600;
-
-          String? label;
-          if (isPositive || isMissing) {
-            if (_recipientHlaSet.contains(allele)) {
-              label = "S";
-            } else if (_donorHlaSet.contains(allele)) {
-              label = "D";
-            }
-          }
-
-          return Container(
-            width: currentCellWidth,
-            height: currentCellHeight,
-            decoration: BoxDecoration(
-              color: cellColor,
-              border: Border.all(color: Colors.white, width: 0.5),
+      child: AnimatedBuilder(
+        animation: _horizontalScrollController,
+        builder: (context, child) {
+          return CustomPaint(
+            size: Size(
+                _sortedColumns.length * currentCellWidth, currentCellHeight),
+            painter: GraphRowPainter(
+              columns: _sortedColumns,
+              positiveMatches: positiveMatches,
+              missingRequired: missingRequired,
+              cellWidth: currentCellWidth,
+              recipientSet: _recipientHlaSet,
+              donorSet: _donorHlaSet,
+              fontSize: currentFontSize,
+              scrollOffset: _horizontalScrollController.hasClients
+                  ? _horizontalScrollController.offset
+                  : 0.0,
+              graphStartX: 0.0,
             ),
-            child: label != null
-                ? Center(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: currentFontSize,
-                        fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(
-                            offset: Offset(1, 1),
-                            blurRadius: 2,
-                            color: Colors.black45,
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : null,
           );
-        }).toList(),
+        },
       ),
     );
   }
