@@ -77,10 +77,10 @@ def fetch_bq_epitopes(request):
     WITH 
     -- 1. Resolve Antibody Serotypes
     resolved_antibodies AS (
-      SELECT DISTINCT expanded_allele
+      SELECT DISTINCT allele
       FROM UNNEST(@input_alleles) AS val
       LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
-      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
     ),
     user_antibodies AS (
       SELECT allele FROM resolved_antibodies
@@ -88,10 +88,10 @@ def fetch_bq_epitopes(request):
     
     -- 2. Resolve Recipient Serotypes
     resolved_recipient AS (
-      SELECT DISTINCT expanded_allele
+      SELECT DISTINCT allele
       FROM UNNEST(@recipient_hla) AS val
       LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
-      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
     ),
     recipient_hla_list AS (
       SELECT allele FROM resolved_recipient
@@ -99,10 +99,10 @@ def fetch_bq_epitopes(request):
 
     -- 3. Resolve Donor Serotypes
     resolved_donor AS (
-      SELECT DISTINCT expanded_allele
+      SELECT DISTINCT allele
       FROM UNNEST(@donor_hla) AS val
       LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
-      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
     ),
     donor_hla_list AS (
       SELECT allele FROM resolved_donor
