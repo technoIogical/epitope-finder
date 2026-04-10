@@ -13,6 +13,8 @@ dependencies:
     sdk: flutter
   http: ^1.5.0  # Correctly indented
   url_launcher: ^6.3.2
+  file_picker: ^8.1.0
+  csv: ^6.0.0
 
 dev_dependencies:
   flutter_test:
