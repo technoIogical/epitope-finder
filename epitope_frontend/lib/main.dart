@@ -171,6 +171,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     }
   }
 
+  // --- UPDATED FETCH DATA ALGORITHM ---
   Future<void> fetchData() async {
     setState(() {
       _isLoading = true;
@@ -234,6 +235,14 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           bool hasS = row['cached_hasS'] == true;
           bool hasD = row['cached_hasD'] == true;
 
+          // NEW RATIO MATH FOR SORTING
+          int posCount = row['Number of Positive Matches'] ?? 0;
+          int negCount = row['Number of Missing Required Alleles'] ?? 0;
+          
+          // Calculate the ratio. If neg is 0, give it a massive multiplier 
+          // so perfect matches (0 missing) are prioritized at the top.
+          double matchRatio = negCount == 0 ? (posCount * 1000.0) : (posCount / negCount);
+
           processedRows.add({
             ...row,
             'cached_hasS': hasS,
@@ -243,8 +252,21 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               row['Positive Matches'] ?? [],
             ),
             'cached_missingRequiredSet': Set<String>.from(missing),
+            'matchRatio': matchRatio, // Store the ratio for sorting
           });
         }
+
+        // APPLY THE DEFAULT SORTING ALGORITHM
+        processedRows.sort((a, b) {
+          // 1st Priority: Sort by the Match Ratio (Highest Ratio First)
+          int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
+          if (ratioCmp != 0) return ratioCmp;
+
+          // 2nd Priority (Tie-breaker): If ratios are identical, sort by absolute Positive Matches
+          int posA = a['Number of Positive Matches'] ?? 0;
+          int posB = b['Number of Positive Matches'] ?? 0;
+          return posB.compareTo(posA);
+        });
 
         negativeColSet.removeAll(_userAllelesSet);
         List<String> negativeCols = negativeColSet.toList()..sort();
@@ -252,7 +274,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         setState(() {
           _epitopeResults = processedRows;
           _sortedColumns = [...positiveCols, ...negativeCols];
-          _sortColumn = null;
+          _sortColumn = null; // Reset user-selected sorting on new search
         });
       } else {
         setState(() {
