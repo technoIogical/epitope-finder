@@ -8,7 +8,7 @@ class GraphRowPainter extends CustomPainter {
   final Set<String> recipientSet;
   final Set<String> donorSet;
   final double fontSize;
-  final double scrollOffset;
+  final ScrollController scrollController;
   final double graphStartX;
 
   GraphRowPainter({
@@ -19,24 +19,26 @@ class GraphRowPainter extends CustomPainter {
     required this.recipientSet,
     required this.donorSet,
     required this.fontSize,
-    required this.scrollOffset,
+    required this.scrollController,
     required this.graphStartX,
-  });
+  }) : super(repaint: scrollController);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()..style = PaintingStyle.fill;
-    final Paint borderPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 0.5
-      ..style = PaintingStyle.stroke;
+    if (!scrollController.hasClients) return;
 
-    // Calculate visible range in terms of column indices
+    final double scrollOffset = scrollController.offset;
     final double viewportStart = scrollOffset - graphStartX;
     final double viewportEnd = viewportStart + size.width;
 
     int startIdx = (viewportStart / cellWidth).floor().clamp(0, columns.length);
     int endIdx = (viewportEnd / cellWidth).ceil().clamp(0, columns.length);
+
+    final Paint paint = Paint()..style = PaintingStyle.fill;
+    final Paint borderPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 0.5
+      ..style = PaintingStyle.stroke;
 
     for (int i = startIdx; i < endIdx; i++) {
       String allele = columns[i];
@@ -97,12 +99,14 @@ class GraphRowPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant GraphRowPainter old) {
-    return old.columns != columns ||
-        old.recipientSet != recipientSet ||
-        old.donorSet != donorSet ||
-        old.cellWidth != cellWidth ||
-        old.scrollOffset != scrollOffset ||
-        old.fontSize != fontSize;
+  bool shouldRepaint(covariant GraphRowPainter oldDelegate) {
+    return oldDelegate.columns != columns ||
+        oldDelegate.positiveMatches != positiveMatches ||
+        oldDelegate.missingRequired != missingRequired ||
+        oldDelegate.cellWidth != cellWidth ||
+        oldDelegate.recipientSet != recipientSet ||
+        oldDelegate.donorSet != donorSet ||
+        oldDelegate.fontSize != fontSize ||
+        oldDelegate.scrollController != scrollController;
   }
 }
