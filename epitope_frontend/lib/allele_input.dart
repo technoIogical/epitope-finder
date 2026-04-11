@@ -88,28 +88,26 @@ class _AlleleInputState extends State<AlleleInput> {
     }
   }
 
-  // --- OBVIOUS & MODERN GRADIENTS ---
+  // --- UPDATED CUSTOM HEX SHADES ---
   BoxDecoration _getDropdownItemDecoration(String allele) {
     final upper = allele.toUpperCase();
-    
-    // Class I Alleles
+    Color bgColor = Colors.white;
+
     if (upper.startsWith('A*') || upper.startsWith('A-')) {
-      return BoxDecoration(gradient: LinearGradient(colors: [Colors.orange.shade300, Colors.amber.shade100]));
+      bgColor = const Color(0xFFFEE4CB); // Soft Peach/Orange
     } else if (upper.startsWith('B*') || upper.startsWith('B-')) {
-      return BoxDecoration(gradient: LinearGradient(colors: [Colors.purple.shade300, Colors.pink.shade100]));
+      bgColor = const Color(0xFFEAE4F2); // Soft Lavender/Purple
     } else if (upper.startsWith('C*') || upper.startsWith('C-')) {
-      return BoxDecoration(gradient: LinearGradient(colors: [Colors.blue.shade400, Colors.lightBlue.shade100]));
-    } 
-    // Class II Alleles
-    else if (upper.startsWith('DR')) {
-      return BoxDecoration(gradient: LinearGradient(colors: [Colors.teal.shade300, Colors.cyan.shade100]));
+      bgColor = const Color(0xFFD6EAF8); // Soft Sky Blue
+    } else if (upper.startsWith('DR')) {
+      bgColor = const Color(0xFFC0E8E4); // Light Teal
     } else if (upper.startsWith('DQ')) {
-      return BoxDecoration(gradient: LinearGradient(colors: [Colors.green.shade400, Colors.lightGreen.shade100]));
+      bgColor = const Color(0xFFEAAFAF); // Lighter #c17171 (Muted Rose)
     } else if (upper.startsWith('DP')) {
-      return BoxDecoration(gradient: LinearGradient(colors: [Colors.indigo.shade300, Colors.indigo.shade100]));
+      bgColor = const Color(0xFFBCBBE0); // Lighter #777696 (Soft Periwinkle)
     }
-    
-    return const BoxDecoration(color: Colors.white);
+
+    return BoxDecoration(color: bgColor);
   }
 
   // ── File Upload Logic ──────────────────
@@ -200,39 +198,16 @@ class _AlleleInputState extends State<AlleleInput> {
     }
 
     bool changed = false;
-    List<String> invalidEntries = [];
-
     setState(() {
-      for (String entry in validAlleles) {
-        // Validation check against allAlleles
-        if (widget.allAlleles.contains(entry)) {
-          if (!widget.selectedAlleles.contains(entry)) {
-            widget.selectedAlleles.add(entry);
-            changed = true;
-          }
-        } else {
-          invalidEntries.add(entry);
+      for (String allele in validAlleles) {
+        if (!widget.selectedAlleles.contains(allele)) {
+          widget.selectedAlleles.add(allele);
+          changed = true;
         }
       }
     });
 
     if (changed) widget.onChanged();
-    if (invalidEntries.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Unknown items: ${invalidEntries.join(', ')}. These were not added.',
-          ),
-          backgroundColor: Colors.orange[800],
-        ),
-      );
-    }
-
-    if (changed) {
-      widget.onChanged();
-    }
-
-    // Clear the text field after successful processing
     controller.clear();
   }
 
@@ -390,7 +365,7 @@ class _AlleleInputState extends State<AlleleInput> {
                 alignment: Alignment.topLeft,
                 child: Material(
                   elevation: 4.0,
-                  surfaceTintColor: Colors.transparent, // Disable Material 3 tinting
+                  surfaceTintColor: Colors.transparent, 
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       maxHeight: 250, 

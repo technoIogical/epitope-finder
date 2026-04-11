@@ -30,37 +30,29 @@ class GraphHeaderPainter extends CustomPainter {
     for (int i = startIdx; i < endIdx; i++) {
       String allele = columns[i];
 
-      // --- THE MISSING GRADIENT LOGIC ---
+      // --- UPDATED CUSTOM HEX SHADES ---
       final String upper = allele.toUpperCase();
-      List<Color> colors = [Colors.white, Colors.white]; 
+      Color bgColor = Colors.white; 
       
       if (upper.startsWith('A*') || upper.startsWith('A-')) {
-        colors = [Colors.orange.shade300, Colors.amber.shade100];
+        bgColor = const Color(0xFFFEE4CB); // Soft Peach/Orange
       } else if (upper.startsWith('B*') || upper.startsWith('B-')) {
-        colors = [Colors.purple.shade300, Colors.pink.shade100];
+        bgColor = const Color(0xFFEAE4F2); // Soft Lavender/Purple
       } else if (upper.startsWith('C*') || upper.startsWith('C-')) {
-        colors = [Colors.blue.shade400, Colors.lightBlue.shade100];
+        bgColor = const Color(0xFFD6EAF8); // Soft Sky Blue
       } else if (upper.startsWith('DR')) {
-        colors = [Colors.teal.shade300, Colors.cyan.shade100];
+        bgColor = const Color(0xFFC0E8E4); // Light Teal
       } else if (upper.startsWith('DQ')) {
-        colors = [Colors.green.shade400, Colors.lightGreen.shade100];
+        bgColor = const Color(0xFFEAAFAF); // Lighter #c17171 (Muted Rose)
       } else if (upper.startsWith('DP')) {
-        colors = [Colors.indigo.shade300, Colors.indigo.shade100];
+        bgColor = const Color(0xFFBCBBE0); // Lighter #777696 (Soft Periwinkle)
       }
 
-      // Draw the gradient background if it matches a class
-      if (colors.first != Colors.white) {
-        final Rect cellRect = Rect.fromLTWH(i * cellWidth, 0, cellWidth, size.height);
-        final Paint bgPaint = Paint()
-          ..shader = LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: colors,
-          ).createShader(cellRect);
-        canvas.drawRect(cellRect, bgPaint);
-      }
+      // Draw the solid color background
+      final Rect cellRect = Rect.fromLTWH(i * cellWidth, 0, cellWidth, size.height);
+      final Paint bgPaint = Paint()..color = bgColor;
+      canvas.drawRect(cellRect, bgPaint);
 
-      // Draw the Text (Thickened slightly for contrast over the new gradients)
       final textSpan = TextSpan(
         text: allele,
         style: TextStyle(

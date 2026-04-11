@@ -22,12 +22,12 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blue,
-          surface: Colors.white, // Forces pure white surface
+          surface: Colors.white, 
         ),
-        scaffoldBackgroundColor: Colors.white, // Forces pure white background
+        scaffoldBackgroundColor: Colors.white, 
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent, // Kills the greenish/blue tint!
+          surfaceTintColor: Colors.transparent, 
         ),
         useMaterial3: true,
       ),
@@ -398,7 +398,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildSearchHeader() {
     return Container(
       padding: const EdgeInsets.all(16.0),
-      color: Colors.white, // Now purely white
+      color: Colors.white, 
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -430,7 +430,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   selectedAlleles: _selectedRecipientHla,
                   allAlleles: _allAlleles,
                   onChanged: () => setState(() {}),
-                  fillColor: Colors.blue[50],
+                  fillColor: Colors.white, 
                 ),
                 const SizedBox(height: 8),
                 AlleleInput(
@@ -439,7 +439,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   selectedAlleles: _selectedDonorHla,
                   allAlleles: _allAlleles,
                   onChanged: () => setState(() {}),
-                  fillColor: Colors.orange[50],
+                  fillColor: Colors.white, 
                 ),
               ],
             ),
@@ -649,7 +649,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildStickyHeader(double nameW, double countW) {
     return Container(
       height: currentHeaderHeight,
-      color: Colors.white, // Pure white matching the rest
+      color: Colors.white, 
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -671,7 +671,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildScrollableHeader() {
     return Container(
       height: currentHeaderHeight,
-      color: Colors.white, // Pure white matching the rest
+      color: Colors.white, 
       child: CustomPaint(
         size:
             Size(_sortedColumns.length * currentCellWidth, currentHeaderHeight),
@@ -733,11 +733,11 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: bgColor ?? Colors.white, // Fallback purely to white
+          color: bgColor ?? Colors.white, 
           border: Border(
             right: BorderSide(color: Colors.grey.shade300),
             bottom: isHeader
-                ? BorderSide(color: Colors.grey.shade300, width: 2) // Softened to match
+                ? BorderSide(color: Colors.grey.shade300, width: 2) 
                 : BorderSide.none,
           ),
         ),
@@ -787,7 +787,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   Widget _buildZoomControl() {
     return Container(
-      color: Colors.grey[50],
+      color: Colors.white, // FORCING PURE WHITE TO REMOVE GREY GAP
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
