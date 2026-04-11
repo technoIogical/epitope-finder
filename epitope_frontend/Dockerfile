@@ -5,9 +5,9 @@ WORKDIR /app
 COPY . .
 ARG VERSION
 
-# Ensure dependencies are fresh and build with CanvasKit for consistent icon rendering
+# Ensure dependencies are fresh and build with no icon tree-shaking to prevent missing icons
 RUN flutter pub get
-RUN flutter build web --release --web-renderer canvaskit --dart-define=APP_VERSION=$VERSION
+RUN flutter build web --release --no-tree-shake-icons --dart-define=APP_VERSION=$VERSION
 
 FROM nginx:stable-alpine
 COPY --from=build-env /app/build/web /usr/share/nginx/html
