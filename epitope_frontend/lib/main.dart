@@ -456,7 +456,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               const SizedBox(width: 16),
               SizedBox(
                 height: 180,
-                width: 120,
+                width: 140,
                 child: ElevatedButton(
                   onPressed: fetchData,
                   style: ElevatedButton.styleFrom(
@@ -466,6 +466,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    padding: EdgeInsets.zero,
                   ),
                   child: const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
