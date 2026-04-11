@@ -2,6 +2,7 @@ import functions_framework
 from google.cloud import bigquery
 import os
 import logging
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -77,26 +78,44 @@ def fetch_bq_epitopes(request):
     WITH 
     -- 1. Resolve Antibody Serotypes into a single array
     resolved_antibodies AS (
-      SELECT ARRAY_AGG(DISTINCT allele) AS arr
-      FROM UNNEST(@input_alleles) AS val
-      LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
-      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
+      SELECT ARRAY_AGG(DISTINCT allele IGNORE NULLS) AS arr
+      FROM (
+        SELECT expanded_allele as allele
+        FROM UNNEST(@input_alleles) AS val
+        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+      )
+      WHERE allele LIKE '%*%' -- Force only specific alleles in columns
     ),
     
     -- 2. Resolve Recipient Serotypes into a single array
     resolved_recipient AS (
-      SELECT ARRAY_AGG(DISTINCT allele) AS arr
-      FROM UNNEST(@recipient_hla) AS val
-      LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
-      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
+      SELECT ARRAY_AGG(DISTINCT allele IGNORE NULLS) AS arr
+      FROM (
+        SELECT expanded_allele as allele
+        FROM UNNEST(@recipient_hla) AS val
+        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+      )
+      WHERE allele LIKE '%*%'
     ),
 
     -- 3. Resolve Donor Serotypes into a single array
     resolved_donor AS (
-      SELECT ARRAY_AGG(DISTINCT allele) AS arr
-      FROM UNNEST(@donor_hla) AS val
-      LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m ON val = m.serotype
-      CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS allele
+      SELECT ARRAY_AGG(DISTINCT allele IGNORE NULLS) AS arr
+      FROM (
+        SELECT expanded_allele as allele
+        FROM UNNEST(@donor_hla) AS val
+        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+      )
+      WHERE allele LIKE '%*%'
     ),
 
     -- Pre-filter rows
