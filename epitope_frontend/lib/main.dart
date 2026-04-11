@@ -87,7 +87,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   double get currentFontSize => 12.0 * _zoomLevel.value;
 
   String? _sortColumn;
-  bool _sortAscending = true;
+  bool _sortAscending = false; // Start initialized as descending
 
   void _updateZoom(double change) {
     _zoomLevel.value = (_zoomLevel.value + change).clamp(0.5, 3.0);
@@ -234,8 +234,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
         
-        int totalInputCount = _selectedAntibodies.length;
-
         for (var rawRow in rawRows) {
           final Map<String, dynamic> row =
               Map<String, dynamic>.from(rawRow as Map);
@@ -258,11 +256,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           int posCount = row['Number of Positive Matches'] ?? 0;
           int negCount = row['Number of Missing Required Alleles'] ?? 0;
 
-          // --- THE NEW MATH LOGIC ---
-          double matchRatio = 0.0;
-          if (totalInputCount > 0) {
-             matchRatio = (posCount.toDouble() / totalInputCount) - negCount.toDouble();
-          }
+          // --- THE NEW MATH LOGIC (Pos - Neg) ---
+          double matchRatio = posCount.toDouble() - negCount.toDouble();
 
           // Massive penalty for Self-Antibody to force it to the bottom
           if (hasS) {
@@ -283,7 +278,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           });
         }
 
-        // Sort by the new intelligent ratio
+        // Apply Intelligent Sort on Initial Load
         processedRows.sort((a, b) {
           int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
           if (ratioCmp != 0) return ratioCmp;
@@ -321,23 +316,44 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   void _sortResults(String column) {
     setState(() {
       if (_sortColumn == column) {
-        _sortAscending = !_sortAscending;
+        if (!_sortAscending) {
+          // 2nd Click: It was descending, switch to ascending
+          _sortAscending = true;
+        } else {
+          // 3rd Click: It was ascending, reset to intelligent sort
+          _sortColumn = null;
+        }
       } else {
+        // 1st Click: Start with descending (big numbers on top)
         _sortColumn = column;
-        _sortAscending = true;
+        _sortAscending = false;
       }
 
-      _epitopeResults.sort((a, b) {
-        dynamic valA = a[column];
-        dynamic valB = b[column];
-        int cmp;
-        if (valA is num && valB is num) {
-          cmp = valA.compareTo(valB);
-        } else {
-          cmp = valA.toString().compareTo(valB.toString());
-        }
-        return _sortAscending ? cmp : -cmp;
-      });
+      if (_sortColumn == null) {
+        // Reset to Intelligent Sort
+        _epitopeResults.sort((a, b) {
+          int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
+          if (ratioCmp != 0) return ratioCmp;
+          
+          int posA = a['Number of Positive Matches'] ?? 0;
+          int posB = b['Number of Positive Matches'] ?? 0;
+          return posB.compareTo(posA);
+        });
+      } else {
+        // Apply Manual Column Sort
+        _epitopeResults.sort((a, b) {
+          dynamic valA = a[_sortColumn];
+          dynamic valB = b[_sortColumn];
+          int cmp;
+          if (valA is num && valB is num) {
+            cmp = valA.compareTo(valB);
+          } else {
+            cmp = valA.toString().compareTo(valB.toString());
+          }
+          // _sortAscending = false means Descending (-cmp handles large to small)
+          return _sortAscending ? cmp : -cmp;
+        });
+      }
     });
   }
 
@@ -890,9 +906,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             if (isHeader && sortKey != null)
               Icon(
                 isSorted
-                    ? (_sortAscending
-                        ? Icons.arrow_upward
-                        : Icons.arrow_downward)
+                    ? (!_sortAscending // Re-mapped UI Arrows to match user request
+                        ? Icons.arrow_upward // Arrow Up: Big numbers on top (Descending)
+                        : Icons.arrow_downward) // Arrow Down: Small numbers on top (Ascending)
                     : Icons.sort,
                 size: 12,
                 color: isSorted ? Colors.blue : Colors.grey,
