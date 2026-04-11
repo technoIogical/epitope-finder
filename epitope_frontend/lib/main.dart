@@ -19,7 +19,18 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Epitope Finder',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          surface: Colors.white, // Forces pure white surface
+        ),
+        scaffoldBackgroundColor: Colors.white, // Forces pure white background
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent, // Kills the greenish/blue tint!
+        ),
+        useMaterial3: true,
+      ),
       home: const EpitopeMatrixPage(),
     );
   }
@@ -387,7 +398,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildSearchHeader() {
     return Container(
       padding: const EdgeInsets.all(16.0),
-      color: Colors.grey[100],
+      color: Colors.white, // Now purely white
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -638,7 +649,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildStickyHeader(double nameW, double countW) {
     return Container(
       height: currentHeaderHeight,
-      color: Colors.grey[200],
+      color: Colors.white, // Pure white matching the rest
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -660,7 +671,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildScrollableHeader() {
     return Container(
       height: currentHeaderHeight,
-      color: Colors.grey[200],
+      color: Colors.white, // Pure white matching the rest
       child: CustomPaint(
         size:
             Size(_sortedColumns.length * currentCellWidth, currentHeaderHeight),
@@ -722,11 +733,11 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: bgColor ?? (isHeader ? Colors.grey[200] : Colors.white),
+          color: bgColor ?? Colors.white, // Fallback purely to white
           border: Border(
             right: BorderSide(color: Colors.grey.shade300),
             bottom: isHeader
-                ? BorderSide(color: Colors.grey.shade400, width: 2)
+                ? BorderSide(color: Colors.grey.shade300, width: 2) // Softened to match
                 : BorderSide.none,
           ),
         ),

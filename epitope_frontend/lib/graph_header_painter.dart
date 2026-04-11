@@ -30,11 +30,42 @@ class GraphHeaderPainter extends CustomPainter {
     for (int i = startIdx; i < endIdx; i++) {
       String allele = columns[i];
 
+      // --- THE MISSING GRADIENT LOGIC ---
+      final String upper = allele.toUpperCase();
+      List<Color> colors = [Colors.white, Colors.white]; 
+      
+      if (upper.startsWith('A*') || upper.startsWith('A-')) {
+        colors = [Colors.orange.shade300, Colors.amber.shade100];
+      } else if (upper.startsWith('B*') || upper.startsWith('B-')) {
+        colors = [Colors.purple.shade300, Colors.pink.shade100];
+      } else if (upper.startsWith('C*') || upper.startsWith('C-')) {
+        colors = [Colors.blue.shade400, Colors.lightBlue.shade100];
+      } else if (upper.startsWith('DR')) {
+        colors = [Colors.teal.shade300, Colors.cyan.shade100];
+      } else if (upper.startsWith('DQ')) {
+        colors = [Colors.green.shade400, Colors.lightGreen.shade100];
+      } else if (upper.startsWith('DP')) {
+        colors = [Colors.indigo.shade300, Colors.indigo.shade100];
+      }
+
+      // Draw the gradient background if it matches a class
+      if (colors.first != Colors.white) {
+        final Rect cellRect = Rect.fromLTWH(i * cellWidth, 0, cellWidth, size.height);
+        final Paint bgPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: colors,
+          ).createShader(cellRect);
+        canvas.drawRect(cellRect, bgPaint);
+      }
+
+      // Draw the Text (Thickened slightly for contrast over the new gradients)
       final textSpan = TextSpan(
         text: allele,
         style: TextStyle(
           fontSize: 11 * (fontSize / 12.0),
-          fontWeight: FontWeight.normal,
+          fontWeight: FontWeight.w600, 
           color: Colors.black87,
         ),
       );
@@ -60,7 +91,7 @@ class GraphHeaderPainter extends CustomPainter {
       canvas.restore();
 
       final Paint dividerPaint = Paint()
-        ..color = Colors.grey.shade300
+        ..color = Colors.grey.shade300 
         ..strokeWidth = 1.0;
       canvas.drawLine(
         Offset((i + 1) * cellWidth, 0),
