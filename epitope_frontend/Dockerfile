@@ -1,12 +1,13 @@
 # Step 1: Use a pre-baked Flutter image instead of Debian
-# You can find community ones or build your own once and host in your Registry
 FROM ghcr.io/cirruslabs/flutter:stable AS build-env
 
 WORKDIR /app
 COPY . .
 ARG VERSION
-# No git clone or doctor needed; the image already has it
-RUN flutter build web --release --dart-define=APP_VERSION=$VERSION
+
+# Ensure dependencies are fresh and build with CanvasKit for consistent icon rendering
+RUN flutter pub get
+RUN flutter build web --release --web-renderer canvaskit --dart-define=APP_VERSION=$VERSION
 
 FROM nginx:stable-alpine
 COPY --from=build-env /app/build/web /usr/share/nginx/html

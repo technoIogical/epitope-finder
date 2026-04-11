@@ -470,13 +470,20 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   child: const Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.analytics, size: 32),
+                      Icon(
+                        Icons.analytics,
+                        size: 32,
+                        color: Colors.white,
+                      ),
                       SizedBox(height: 8),
                       Text(
                         'Analyze',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.white,
+                        ),
                       ),
                     ],
                   ),
