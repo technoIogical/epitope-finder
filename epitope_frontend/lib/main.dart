@@ -22,12 +22,12 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blue,
-          surface: Colors.white, 
+          surface: Colors.white,
         ),
-        scaffoldBackgroundColor: Colors.white, 
+        scaffoldBackgroundColor: Colors.white,
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent, 
+          surfaceTintColor: Colors.transparent,
         ),
         useMaterial3: true,
       ),
@@ -49,7 +49,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     defaultValue: 'dev',
   );
 
-  // Allele Autocomplete Data
   List<String> _allAlleles = [];
   bool _isAlleleFetchError = false;
 
@@ -75,7 +74,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   bool _isLoading = false;
   String _errorMessage = '';
 
-  // Use the updated server URL
   final String apiUrl = 'https://api.epitopefinder.dpdns.org';
 
   final ValueNotifier<double> _zoomLevel = ValueNotifier<double>(1.0);
@@ -88,7 +86,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   double get currentHeaderHeight => baseHeaderHeight * _zoomLevel.value;
   double get currentFontSize => 12.0 * _zoomLevel.value;
 
-  // Added for sorting
   String? _sortColumn;
   bool _sortAscending = true;
 
@@ -102,23 +99,20 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     _antibodyFocusNode.addListener(_onAntibodyFocusChange);
     _fetchAlleles();
 
-    // Sync vertical scroll controllers
     _verticalScrollController.addListener(() {
       if (_stickyVerticalScrollController.hasClients &&
           _stickyVerticalScrollController.offset !=
               _verticalScrollController.offset) {
-        _stickyVerticalScrollController.jumpTo(
-          _verticalScrollController.offset,
-        );
+        _stickyVerticalScrollController
+            .jumpTo(_verticalScrollController.offset);
       }
     });
     _stickyVerticalScrollController.addListener(() {
       if (_verticalScrollController.hasClients &&
           _verticalScrollController.offset !=
               _stickyVerticalScrollController.offset) {
-        _verticalScrollController.jumpTo(
-          _stickyVerticalScrollController.offset,
-        );
+        _verticalScrollController
+            .jumpTo(_stickyVerticalScrollController.offset);
       }
     });
   }
@@ -184,7 +178,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     }
   }
 
-  // --- UPDATED FETCH DATA ALGORITHM ---
   Future<void> fetchData() async {
     setState(() {
       _isLoading = true;
@@ -228,7 +221,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           return;
         }
 
-        // Defensive conversion to Dart types
         final Map<String, dynamic> firstRow =
             Map<String, dynamic>.from(rawRows.first as Map);
         final List<String> expandedAntibodies =
@@ -281,7 +273,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           });
         }
 
-        // APPLY THE DEFAULT SORTING ALGORITHM
         processedRows.sort((a, b) {
           int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
           if (ratioCmp != 0) return ratioCmp;
@@ -365,8 +356,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   _buildSearchHeader(),
                   if (_epitopeResults.isNotEmpty) ...[
                     _buildLegend(),
-                    _buildZoomControl(),
-                    const Divider(height: 1),
                   ],
                   Expanded(
                     child: _isLoading
@@ -397,66 +386,103 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   Widget _buildSearchHeader() {
     return Container(
-      padding: const EdgeInsets.all(16.0),
-      color: Colors.white, 
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      padding: const EdgeInsets.all(20.0),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade300),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_isAlleleFetchError)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Text(
-                      'Warning: Could not load autocomplete data.',
-                      style: TextStyle(color: Colors.red[700], fontSize: 12),
-                    ),
-                  ),
-                AlleleInput(
-                  label: 'Recipient Antibodies',
-                  hintText: 'e.g. A*01:01, B*08:01',
-                  selectedAlleles: _selectedAntibodies,
-                  allAlleles: _allAlleles,
-                  onChanged: () => setState(() {}),
-                  isWarming: _isWarming,
-                  focusNode: _antibodyFocusNode,
-                ),
-                const SizedBox(height: 8),
-                AlleleInput(
-                  label: 'Recipient Typing',
-                  hintText: 'e.g. A*02:01',
-                  selectedAlleles: _selectedRecipientHla,
-                  allAlleles: _allAlleles,
-                  onChanged: () => setState(() {}),
-                  fillColor: Colors.white, 
-                ),
-                const SizedBox(height: 8),
-                AlleleInput(
-                  label: 'Donor Typing',
-                  hintText: 'e.g. B*44:02',
-                  selectedAlleles: _selectedDonorHla,
-                  allAlleles: _allAlleles,
-                  onChanged: () => setState(() {}),
-                  fillColor: Colors.white, 
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            height: 200,
-            child: ElevatedButton.icon(
-              onPressed: fetchData,
-              icon: const Icon(Icons.search),
-              label: const Text('Analyze'),
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12.0),
+            child: Text(
+              "Analysis Parameters",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.blueGrey,
               ),
             ),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_isAlleleFetchError)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Text(
+                          'Warning: Could not load autocomplete data.',
+                          style:
+                              TextStyle(color: Colors.red[700], fontSize: 12),
+                        ),
+                      ),
+                    AlleleInput(
+                      label: 'Recipient Antibodies',
+                      hintText: 'e.g. A*01:01, B*08:01, DP3',
+                      selectedAlleles: _selectedAntibodies,
+                      allAlleles: _allAlleles,
+                      onChanged: () => setState(() {}),
+                      isWarming: _isWarming,
+                      focusNode: _antibodyFocusNode,
+                    ),
+                    const SizedBox(height: 12),
+                    AlleleInput(
+                      label: 'Recipient Typing',
+                      hintText: 'e.g. A*02:01',
+                      selectedAlleles: _selectedRecipientHla,
+                      allAlleles: _allAlleles,
+                      onChanged: () => setState(() {}),
+                      fillColor: Colors.white,
+                    ),
+                    const SizedBox(height: 12),
+                    AlleleInput(
+                      label: 'Donor Typing',
+                      hintText: 'e.g. B*44:02',
+                      selectedAlleles: _selectedDonorHla,
+                      allAlleles: _allAlleles,
+                      onChanged: () => setState(() {}),
+                      fillColor: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                height: 180,
+                width: 120,
+                child: ElevatedButton(
+                  onPressed: fetchData,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.analytics, size: 32),
+                      SizedBox(height: 8),
+                      Text(
+                        'Analyze',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -465,82 +491,78 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   Widget _buildLegend() {
     return Container(
-      margin: const EdgeInsets.all(16.0),
-      padding: const EdgeInsets.all(12.0),
+      margin: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+      padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const Text(
-            "Matrix Legend",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 16, color: Colors.blueGrey.shade400),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Matrix Legend",
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.blueGrey),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 24,
+                  runSpacing: 12,
+                  children: [
+                    _legendItem(Colors.green.shade600, "Positive Match"),
+                    _legendItem(Colors.red.shade600, "Missing Required"),
+                    _legendItem(Colors.pink.shade100, "Self/DSA Highlight"),
+                    _legendIcon("(T)", "Theoretical", Colors.blue.shade900),
+                    _legendIcon("S", "Self HLA", Colors.blue.shade900),
+                    _legendIcon("D", "DSA", Colors.orange.shade900),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 20,
-            runSpacing: 10,
-            children: [
-              _legendItem(Colors.green.shade600, "Positive Match"),
-              _legendItem(Colors.red.shade600, "Missing Required"),
-              _legendItem(Colors.pink.shade100, "Self/DSA Highlight"),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    "(T)",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade900,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text("= Theoretical", style: TextStyle(fontSize: 12)),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    "S",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade900,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text("= Self HLA", style: TextStyle(fontSize: 12)),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    "D",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade900,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text("= DSA", style: TextStyle(fontSize: 12)),
-                ],
-              ),
-            ],
-          ),
+          _buildZoomControl(),
         ],
       ),
+    );
+  }
+
+  Widget _legendIcon(String label, String description, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: color,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(description,
+            style: const TextStyle(fontSize: 12, color: Colors.black54)),
+      ],
     );
   }
 
@@ -548,10 +570,76 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 12, height: 12, color: color),
-        const SizedBox(width: 4),
-        Text(text, style: const TextStyle(fontSize: 12)),
+        Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(text, style: const TextStyle(fontSize: 12, color: Colors.black54)),
       ],
+    );
+  }
+
+  Widget _buildZoomControl() {
+    return Container(
+      padding: const EdgeInsets.only(left: 20),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            "Matrix Zoom: ${(_zoomLevel.value * 100).round()}%",
+            style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 11,
+                fontWeight: FontWeight.w600),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.zoom_out,
+                    size: 18, color: Colors.blueGrey),
+                onPressed: () => _updateZoom(-0.1),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              SizedBox(
+                width: 140,
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: _zoomLevel.value,
+                    min: 0.5,
+                    max: 3.0,
+                    onChanged: (value) =>
+                        setState(() => _zoomLevel.value = value),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon:
+                    const Icon(Icons.zoom_in, size: 18, color: Colors.blueGrey),
+                onPressed: () => _updateZoom(0.1),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -560,96 +648,104 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     const double countWidth = 50;
     final double stickyTotalWidth = nameWidth + (countWidth * 2);
 
-    return Row(
-      children: [
-        SizedBox(
-          width: stickyTotalWidth,
-          child: Column(
-            children: [
-              _buildStickyHeader(nameWidth, countWidth),
-              Expanded(
-                child: ListView.builder(
-                  controller: _stickyVerticalScrollController,
-                  padding: const EdgeInsets.only(bottom: 15.0),
-                  itemCount: _epitopeResults.length,
-                  itemExtent: currentCellHeight,
-                  itemBuilder: (context, index) {
-                    final row = _epitopeResults[index];
-                    final bool highlightRow =
-                        row['cached_highlightRow'] ?? false;
-                    final Color nameBgColor =
-                        highlightRow ? Colors.pink.shade100 : Colors.white;
-                    return Container(
-                      height: currentCellHeight,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border(
-                            bottom: BorderSide(color: Colors.grey.shade300)),
-                      ),
-                      child: Row(
-                        children: [
-                          _fixedCell(
-                            row['Epitope Name'] ?? '',
-                            nameWidth,
-                            bgColor: nameBgColor,
-                            isTheoretical: row['isTheoretical'] == true,
-                          ),
-                          _fixedCell(
-                            row['Number of Positive Matches'].toString(),
-                            countWidth,
-                          ),
-                          _fixedCell(
-                            row['Number of Missing Required Alleles']
-                                .toString(),
-                            countWidth,
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          SizedBox(
+            width: stickyTotalWidth,
+            child: Column(
+              children: [
+                _buildStickyHeader(nameWidth, countWidth),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _stickyVerticalScrollController,
+                    padding: const EdgeInsets.only(bottom: 15.0),
+                    itemCount: _epitopeResults.length,
+                    itemExtent: currentCellHeight,
+                    itemBuilder: (context, index) {
+                      final row = _epitopeResults[index];
+                      final bool highlightRow =
+                          row['cached_highlightRow'] ?? false;
+                      final Color nameBgColor =
+                          highlightRow ? Colors.pink.shade100 : Colors.white;
+                      return Container(
+                        height: currentCellHeight,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(
+                              bottom: BorderSide(color: Colors.grey.shade300)),
+                        ),
+                        child: Row(
+                          children: [
+                            _fixedCell(
+                              row['Epitope Name'] ?? '',
+                              nameWidth,
+                              bgColor: nameBgColor,
+                              isTheoretical: row['isTheoretical'] == true,
+                            ),
+                            _fixedCell(
+                              row['Number of Positive Matches'].toString(),
+                              countWidth,
+                            ),
+                            _fixedCell(
+                              row['Number of Missing Required Alleles']
+                                  .toString(),
+                              countWidth,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: Scrollbar(
-            controller: _horizontalScrollController,
-            thumbVisibility: true,
-            trackVisibility: true,
-            child: SingleChildScrollView(
+          Expanded(
+            child: Scrollbar(
               controller: _horizontalScrollController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: _sortedColumns.length * currentCellWidth,
-                child: Column(
-                  children: [
-                    _buildScrollableHeader(),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: _verticalScrollController,
-                        padding: const EdgeInsets.only(bottom: 15.0),
-                        itemCount: _epitopeResults.length,
-                        itemExtent: currentCellHeight,
-                        itemBuilder: (context, index) {
-                          return _buildScrollableRow(_epitopeResults[index]);
-                        },
+              thumbVisibility: true,
+              trackVisibility: true,
+              child: SingleChildScrollView(
+                controller: _horizontalScrollController,
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: _sortedColumns.length * currentCellWidth,
+                  child: Column(
+                    children: [
+                      _buildScrollableHeader(),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _verticalScrollController,
+                          padding: const EdgeInsets.only(bottom: 15.0),
+                          itemCount: _epitopeResults.length,
+                          itemExtent: currentCellHeight,
+                          itemBuilder: (context, index) {
+                            return _buildScrollableRow(_epitopeResults[index]);
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildStickyHeader(double nameW, double countW) {
     return Container(
       height: currentHeaderHeight,
-      color: Colors.white, 
+      color: Colors.white,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -671,7 +767,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   Widget _buildScrollableHeader() {
     return Container(
       height: currentHeaderHeight,
-      color: Colors.white, 
+      color: Colors.white,
       child: CustomPaint(
         size:
             Size(_sortedColumns.length * currentCellWidth, currentHeaderHeight),
@@ -733,11 +829,11 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: bgColor ?? Colors.white, 
+          color: bgColor ?? Colors.white,
           border: Border(
             right: BorderSide(color: Colors.grey.shade300),
             bottom: isHeader
-                ? BorderSide(color: Colors.grey.shade300, width: 2) 
+                ? BorderSide(color: Colors.grey.shade300, width: 2)
                 : BorderSide.none,
           ),
         ),
@@ -781,41 +877,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildZoomControl() {
-    return Container(
-      color: Colors.white, // FORCING PURE WHITE TO REMOVE GREY GAP
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            "Zoom: ${(_zoomLevel.value * 100).round()}%",
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.zoom_out, size: 20, color: Colors.grey),
-            onPressed: () => _updateZoom(-0.1),
-          ),
-          SizedBox(
-            width: 200,
-            child: Slider(
-              value: _zoomLevel.value,
-              min: 0.5,
-              max: 3.0,
-              divisions: 25,
-              onChanged: (value) => setState(() => _zoomLevel.value = value),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.zoom_in, size: 20, color: Colors.grey),
-            onPressed: () => _updateZoom(0.1),
-          ),
-        ],
       ),
     );
   }

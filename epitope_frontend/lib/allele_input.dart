@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; 
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 
@@ -49,14 +49,15 @@ class _AlleleInputState extends State<AlleleInput> {
         if (_controller.text.isEmpty && widget.selectedAlleles.isNotEmpty) {
           if (event is KeyDownEvent || event is KeyRepeatEvent) {
             _backspaceStartTime ??= DateTime.now();
-            final holdDuration = DateTime.now().difference(_backspaceStartTime!);
+            final holdDuration =
+                DateTime.now().difference(_backspaceStartTime!);
 
             setState(() {
               int deleteCount = 1;
               if (holdDuration.inSeconds >= 5) {
-                deleteCount = widget.selectedAlleles.length; 
+                deleteCount = widget.selectedAlleles.length;
               } else if (holdDuration.inSeconds >= 3) {
-                deleteCount = 5; 
+                deleteCount = 5;
               }
               for (int i = 0; i < deleteCount; i++) {
                 if (widget.selectedAlleles.isNotEmpty) {
@@ -71,7 +72,7 @@ class _AlleleInputState extends State<AlleleInput> {
             _backspaceStartTime = null;
           }
         } else {
-          _backspaceStartTime = null; 
+          _backspaceStartTime = null;
         }
       } else if (event is KeyUpEvent) {
         _backspaceStartTime = null;
@@ -139,7 +140,8 @@ class _AlleleInputState extends State<AlleleInput> {
           });
         }
       } else if (file.extension == 'csv') {
-        final List<List<dynamic>> csvTable = const CsvToListConverter().convert(content);
+        final List<List<dynamic>> csvTable =
+            const CsvToListConverter().convert(content);
         for (final row in csvTable) {
           for (final cell in row) {
             if (cell != null && cell.toString().isNotEmpty) {
@@ -185,6 +187,14 @@ class _AlleleInputState extends State<AlleleInput> {
     super.dispose();
   }
 
+  // Helper to normalize strings for comparison (remove dashes and leading zeros)
+  String _normalize(String s) {
+    return s
+        .replaceAll('-', '')
+        .toUpperCase()
+        .replaceAllMapped(RegExp(r'^([A-Z]+)0+'), (m) => m.group(1)!);
+  }
+
   void _processMultiInput(String input, TextEditingController controller) {
     final rawEntries = input.split(RegExp(r'[,\s\n\t]+'));
     final validAlleles = rawEntries
@@ -198,16 +208,49 @@ class _AlleleInputState extends State<AlleleInput> {
     }
 
     bool changed = false;
+    List<String> invalidEntries = [];
+
     setState(() {
-      for (String allele in validAlleles) {
-        if (!widget.selectedAlleles.contains(allele)) {
-          widget.selectedAlleles.add(allele);
-          changed = true;
+      for (String entry in validAlleles) {
+        final String normalizedEntry = _normalize(entry);
+
+        // Find match in allAlleles using normalization
+        String? match;
+        try {
+          match = widget.allAlleles.firstWhere(
+            (a) => _normalize(a) == normalizedEntry,
+          );
+        } catch (_) {
+          match = null;
+        }
+
+        if (match != null) {
+          if (!widget.selectedAlleles.contains(match)) {
+            widget.selectedAlleles.add(match);
+            changed = true;
+          }
+        } else {
+          invalidEntries.add(entry);
         }
       }
     });
 
-    if (changed) widget.onChanged();
+    if (invalidEntries.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unknown items: ${invalidEntries.join(', ')}. These were not added.',
+          ),
+          backgroundColor: Colors.orange[800],
+        ),
+      );
+    }
+
+    if (changed) {
+      widget.onChanged();
+    }
+
+    // Clear the text field after successful processing
     controller.clear();
   }
 
@@ -225,15 +268,40 @@ class _AlleleInputState extends State<AlleleInput> {
                 return const Iterable<String>.empty();
               }
               final String query = textEditingValue.text.toLowerCase();
-              final List<String> startsWith = widget.allAlleles
-                  .where((String option) => option.toLowerCase().startsWith(query))
-                  .toList();
-              final List<String> contains = widget.allAlleles
-                  .where((String option) =>
-                        option.toLowerCase().contains(query) &&
-                        !option.toLowerCase().startsWith(query))
-                  .toList();
-              return [...startsWith, ...contains].take(50);
+              final String normalizedQuery = _normalize(query);
+
+              // Prioritize exact normalized matches (e.g. typing "DP3" matching "DP-03")
+              final List<String> fuzzyMatches =
+                  widget.allAlleles.where((option) {
+                final String normalizedOption =
+                    _normalize(option.toLowerCase());
+                return normalizedOption.contains(normalizedQuery) ||
+                    option.toLowerCase().contains(query);
+              }).toList();
+
+              // Sort results: Starts with query first, then normalized starts with, then contains
+              fuzzyMatches.sort((a, b) {
+                final aLower = a.toLowerCase();
+                final bLower = b.toLowerCase();
+                final aNorm = _normalize(aLower);
+                final bNorm = _normalize(bLower);
+
+                // Exact starts with
+                if (aLower.startsWith(query) && !bLower.startsWith(query))
+                  return -1;
+                if (!aLower.startsWith(query) && bLower.startsWith(query))
+                  return 1;
+
+                // Normalized starts with
+                if (aNorm.startsWith(normalizedQuery) &&
+                    !bNorm.startsWith(normalizedQuery)) return -1;
+                if (!aNorm.startsWith(normalizedQuery) &&
+                    bNorm.startsWith(normalizedQuery)) return 1;
+
+                return aLower.compareTo(bLower);
+              });
+
+              return fuzzyMatches.take(50);
             },
             onSelected: (String selection) {
               setState(() {
@@ -244,20 +312,23 @@ class _AlleleInputState extends State<AlleleInput> {
                 _controller.clear();
               });
             },
-            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+            fieldViewBuilder:
+                (context, controller, focusNode, onFieldSubmitted) {
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => focusNode.requestFocus(),
                 child: InputDecorator(
                   isFocused: _isFocused,
-                  isEmpty: widget.selectedAlleles.isEmpty && controller.text.isEmpty,
+                  isEmpty:
+                      widget.selectedAlleles.isEmpty && controller.text.isEmpty,
                   decoration: InputDecoration(
                     labelText: widget.label,
                     hintText: widget.hintText,
                     fillColor: widget.fillColor ?? Colors.white,
                     filled: true,
                     border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -291,12 +362,17 @@ class _AlleleInputState extends State<AlleleInput> {
                         (allele) {
                           final bool isSerotype = !allele.contains('*');
                           return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isSerotype ? Colors.blue[100] : Colors.grey[200],
+                              color: isSerotype
+                                  ? Colors.blue[100]
+                                  : Colors.grey[200],
                               borderRadius: BorderRadius.circular(2),
                               border: Border.all(
-                                color: isSerotype ? Colors.blue.shade300 : Colors.grey.shade400,
+                                color: isSerotype
+                                    ? Colors.blue.shade300
+                                    : Colors.grey.shade400,
                               ),
                             ),
                             child: Row(
@@ -306,7 +382,9 @@ class _AlleleInputState extends State<AlleleInput> {
                                   allele,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    fontWeight: isSerotype ? FontWeight.bold : FontWeight.normal,
+                                    fontWeight: isSerotype
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
@@ -320,7 +398,9 @@ class _AlleleInputState extends State<AlleleInput> {
                                   child: Icon(
                                     Icons.close,
                                     size: 14,
-                                    color: isSerotype ? Colors.blue[900] : Colors.grey,
+                                    color: isSerotype
+                                        ? Colors.blue[900]
+                                        : Colors.grey,
                                   ),
                                 ),
                               ],
@@ -335,7 +415,9 @@ class _AlleleInputState extends State<AlleleInput> {
                           focusNode: focusNode,
                           onChanged: (val) {
                             setState(() {});
-                            if (val.contains(',') || val.contains('\n') || val.contains('\t')) {
+                            if (val.contains(',') ||
+                                val.contains('\n') ||
+                                val.contains('\t')) {
                               _processMultiInput(val, controller);
                             }
                           },
@@ -345,9 +427,12 @@ class _AlleleInputState extends State<AlleleInput> {
                             contentPadding: EdgeInsets.symmetric(vertical: 8),
                           ),
                           onSubmitted: (value) {
-                            if (value.contains(',') || value.contains(' ') || value.contains('-')) {
+                            if (value.contains(',') ||
+                                value.contains(' ') ||
+                                value.contains('-')) {
                               _processMultiInput(value, controller);
-                            } else if (value.isNotEmpty && widget.allAlleles.contains(value)) {
+                            } else if (value.isNotEmpty &&
+                                widget.allAlleles.contains(value)) {
                               onFieldSubmitted();
                             } else {
                               _processMultiInput(value, controller);
@@ -365,10 +450,10 @@ class _AlleleInputState extends State<AlleleInput> {
                 alignment: Alignment.topLeft,
                 child: Material(
                   elevation: 4.0,
-                  surfaceTintColor: Colors.transparent, 
+                  surfaceTintColor: Colors.transparent,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxHeight: 250, 
+                      maxHeight: 250,
                       maxWidth: outerConstraints.maxWidth,
                     ),
                     child: ListView.builder(
@@ -378,8 +463,11 @@ class _AlleleInputState extends State<AlleleInput> {
                       itemBuilder: (BuildContext context, int index) {
                         final String option = options.elementAt(index);
                         return Container(
-                          decoration: _getDropdownItemDecoration(option).copyWith(
-                            border: const Border(bottom: BorderSide(color: Colors.white, width: 1.5)),
+                          decoration:
+                              _getDropdownItemDecoration(option).copyWith(
+                            border: const Border(
+                                bottom: BorderSide(
+                                    color: Colors.white, width: 1.5)),
                           ),
                           child: ListTile(
                             dense: true,
@@ -387,7 +475,7 @@ class _AlleleInputState extends State<AlleleInput> {
                               option,
                               style: const TextStyle(
                                 color: Colors.black87,
-                                fontWeight: FontWeight.w600, 
+                                fontWeight: FontWeight.w600,
                               ),
                               softWrap: false,
                               overflow: TextOverflow.visible,
