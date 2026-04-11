@@ -233,6 +233,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
         Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
+        
+        int totalInputCount = _selectedAntibodies.length;
 
         for (var rawRow in rawRows) {
           final Map<String, dynamic> row =
@@ -256,8 +258,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           int posCount = row['Number of Positive Matches'] ?? 0;
           int negCount = row['Number of Missing Required Alleles'] ?? 0;
 
-          double matchRatio =
-              negCount == 0 ? (posCount * 1000.0) : (posCount / negCount);
+          // --- THE NEW MATH LOGIC ---
+          double matchRatio = 0.0;
+          if (totalInputCount > 0) {
+             matchRatio = (posCount.toDouble() / totalInputCount) - negCount.toDouble();
+          }
+
+          // Massive penalty for Self-Antibody to force it to the bottom
+          if (hasS) {
+            matchRatio -= 1000.0; 
+          }
 
           processedRows.add({
             'Epitope Name': row['Epitope Name'],
@@ -273,9 +283,12 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           });
         }
 
+        // Sort by the new intelligent ratio
         processedRows.sort((a, b) {
           int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
           if (ratioCmp != 0) return ratioCmp;
+          
+          // Tie-breaker
           int posA = a['Number of Positive Matches'] ?? 0;
           int posB = b['Number of Positive Matches'] ?? 0;
           return posB.compareTo(posA);
@@ -596,6 +609,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     return Container(
       padding: const EdgeInsets.only(left: 20),
       decoration: BoxDecoration(
+        color: Colors.white, // Explicitly enforce pure white background
         border: Border(left: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Column(

@@ -89,23 +89,29 @@ class _AlleleInputState extends State<AlleleInput> {
     }
   }
 
-  // --- UPDATED CUSTOM HEX SHADES ---
+  // --- SUB-CLASS SHADE VARIATIONS ---
   BoxDecoration _getDropdownItemDecoration(String allele) {
     final upper = allele.toUpperCase();
     Color bgColor = Colors.white;
 
     if (upper.startsWith('A*') || upper.startsWith('A-')) {
-      bgColor = const Color(0xFFFEE4CB); // Soft Peach/Orange
+      bgColor = const Color(0xFFFEE4CB); // Soft Peach
     } else if (upper.startsWith('B*') || upper.startsWith('B-')) {
-      bgColor = const Color(0xFFEAE4F2); // Soft Lavender/Purple
+      bgColor = const Color(0xFFEAE4F2); // Soft Lavender
     } else if (upper.startsWith('C*') || upper.startsWith('C-')) {
       bgColor = const Color(0xFFD6EAF8); // Soft Sky Blue
+    } else if (upper.startsWith('DRB1')) {
+      bgColor = const Color(0xFFC0E8E4); // DRB1 (Light Teal)
     } else if (upper.startsWith('DR')) {
-      bgColor = const Color(0xFFC0E8E4); // Light Teal
-    } else if (upper.startsWith('DQ')) {
-      bgColor = const Color(0xFFEAAFAF); // Lighter #c17171 (Muted Rose)
-    } else if (upper.startsWith('DP')) {
-      bgColor = const Color(0xFFBCBBE0); // Lighter #777696 (Soft Periwinkle)
+      bgColor = const Color(0xFFDDF2F0); // Other DR (Lighter Teal/Mint)
+    } else if (upper.startsWith('DQB1')) {
+      bgColor = const Color(0xFFEAAFAF); // DQB1 (Muted Rose)
+    } else if (upper.startsWith('DQA1') || upper.startsWith('DQ')) {
+      bgColor = const Color(0xFFF5D6D6); // DQA1 (Lighter Rose)
+    } else if (upper.startsWith('DPB1')) {
+      bgColor = const Color(0xFFBCBBE0); // DPB1 (Soft Periwinkle)
+    } else if (upper.startsWith('DPA1') || upper.startsWith('DP')) {
+      bgColor = const Color(0xFFDEDDF0); // DPA1 (Lighter Periwinkle)
     }
 
     return BoxDecoration(color: bgColor);
