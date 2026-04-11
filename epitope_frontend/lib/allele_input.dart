@@ -190,14 +190,32 @@ class _AlleleInputState extends State<AlleleInput> {
     }
 
     bool changed = false;
+    List<String> invalidEntries = [];
+
     setState(() {
-      for (String allele in validAlleles) {
-        if (!widget.selectedAlleles.contains(allele)) {
-          widget.selectedAlleles.add(allele);
-          changed = true;
+      for (String entry in validAlleles) {
+        // Validation check against allAlleles
+        if (widget.allAlleles.contains(entry)) {
+          if (!widget.selectedAlleles.contains(entry)) {
+            widget.selectedAlleles.add(entry);
+            changed = true;
+          }
+        } else {
+          invalidEntries.add(entry);
         }
       }
     });
+
+    if (invalidEntries.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unknown items: ${invalidEntries.join(', ')}. These were not added.',
+          ),
+          backgroundColor: Colors.orange[800],
+        ),
+      );
+    }
 
     if (changed) {
       widget.onChanged();

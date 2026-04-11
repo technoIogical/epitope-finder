@@ -96,6 +96,16 @@ class GraphRowPainter extends CustomPainter {
         }
       }
     }
+
+    // Draw horizontal bottom border for the row
+    final Paint rowBorderPaint = Paint()
+      ..color = Colors.grey.shade300
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(0, size.height),
+      Offset(size.width, size.height),
+      rowBorderPaint,
+    );
   }
 
   @override
