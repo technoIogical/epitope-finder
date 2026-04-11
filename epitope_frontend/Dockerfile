@@ -1,5 +1,5 @@
 # Step 1: Use a pre-baked Flutter image instead of Debian
-FROM ghcr.io/cirruslabs/flutter:3.24.0 AS build-env
+FROM ghcr.io/cirruslabs/flutter:stable AS build-env
 
 WORKDIR /app
 COPY . .
