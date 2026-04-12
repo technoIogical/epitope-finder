@@ -93,7 +93,7 @@ def fetch_bq_epitopes(request):
     -- 2. Recipient Groups
     recipient_groups AS (
       SELECT 
-        val as original_input,
+        val,
         ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
       FROM (
         SELECT val, expanded_allele
@@ -110,7 +110,7 @@ def fetch_bq_epitopes(request):
     -- 3. Donor Groups
     donor_groups AS (
       SELECT 
-        val as original_input,
+        val,
         ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
       FROM (
         SELECT val, expanded_allele
@@ -124,13 +124,7 @@ def fetch_bq_epitopes(request):
       GROUP BY val
     ),
 
-    -- 4. All relevant alleles for ranking
-    recipient_alleles_flat AS (
-      SELECT ARRAY_AGG(DISTINCT ma IGNORE NULLS) as arr 
-      FROM recipient_groups rg, UNNEST(rg.expanded_alleles) ma
-    ),
-
-    -- Pre-filter rows
+    -- Pre-filter epitope rows
     filtered_rows AS (
       SELECT t.epitope_name, t.alleles, t.required_alleles, t.theoretical, ra.arr AS user_arr
       FROM `epitopefinder-458404`.epitopes.HLA_data AS t
@@ -140,28 +134,46 @@ def fetch_bq_epitopes(request):
         WHERE a IN UNNEST(ra.arr)
       )
     ),
-    
-    -- Evaluate groups using joins to avoid correlated subqueries
-    matches_s AS (
-      SELECT 
-        t.epitope_name,
-        LOGICAL_OR(
-          (SELECT COUNT(1) FROM UNNEST(rg.expanded_alleles) ma WHERE ma IN UNNEST(t.alleles)) = ARRAY_LENGTH(rg.expanded_alleles)
-        ) as cached_hasS
-      FROM filtered_rows t
-      LEFT JOIN recipient_groups rg ON TRUE
-      GROUP BY t.epitope_name
+
+    -- Flattened sets for efficient joining (De-correlating subqueries)
+    recipient_flat AS (
+      SELECT val, ma FROM recipient_groups, UNNEST(expanded_alleles) ma
+    ),
+    donor_flat AS (
+      SELECT val, ma FROM donor_groups, UNNEST(expanded_alleles) ma
+    ),
+    epitope_flat AS (
+      SELECT epitope_name, a FROM filtered_rows, UNNEST(alleles) a
     ),
 
+    -- Calculate Recipient Matches (Intersection logic)
+    matches_s AS (
+      SELECT 
+        sm.epitope_name,
+        LOGICAL_OR(sm.match_count = ARRAY_LENGTH(rg.expanded_alleles)) as cached_hasS
+      FROM (
+        SELECT ef.epitope_name, rf.val, COUNT(rf.ma) as match_count
+        FROM epitope_flat ef
+        INNER JOIN recipient_flat rf ON ef.a = rf.ma
+        GROUP BY 1, 2
+      ) sm
+      JOIN recipient_groups rg ON sm.val = rg.val
+      GROUP BY 1
+    ),
+
+    -- Calculate Donor Matches (Union logic)
     matches_d AS (
       SELECT 
-        t.epitope_name,
-        LOGICAL_OR(
-          EXISTS(SELECT 1 FROM UNNEST(dg.expanded_alleles) ma WHERE ma IN UNNEST(t.alleles))
-        ) as cached_hasD
-      FROM filtered_rows t
-      LEFT JOIN donor_groups dg ON TRUE
-      GROUP BY t.epitope_name
+        ef.epitope_name,
+        LOGICAL_OR(TRUE) as cached_hasD
+      FROM epitope_flat ef
+      INNER JOIN donor_flat df ON ef.a = df.ma
+      GROUP BY 1
+    ),
+
+    -- Final flattened recipient list for ranking
+    recipient_alleles_flat AS (
+      SELECT ARRAY_AGG(DISTINCT ma IGNORE NULLS) as arr FROM recipient_flat
     ),
 
     final_data AS (
