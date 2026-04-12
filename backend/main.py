@@ -76,7 +76,7 @@ def fetch_bq_epitopes(request):
 
     query = """
     WITH 
-    -- 1. Resolve Antibody Serotypes into a single array
+    -- 1. Resolve Antibody Serotypes into a single array (Union for search columns)
     resolved_antibodies AS (
       SELECT ARRAY_AGG(DISTINCT allele IGNORE NULLS) AS arr
       FROM (
@@ -87,44 +87,58 @@ def fetch_bq_epitopes(request):
              REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
         CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
       )
-      WHERE allele LIKE '%*%' -- Force only specific alleles in columns
+      WHERE allele LIKE '%*%'
     ),
     
-    -- 2. Resolve Recipient Serotypes into a single array
-    resolved_recipient AS (
-      SELECT ARRAY_AGG(DISTINCT allele IGNORE NULLS) AS arr
+    -- 2. Recipient Groups (Resolved into a STRUCT array for Intersection logic)
+    recipient_resolved AS (
+      SELECT ARRAY_AGG(STRUCT(expanded_alleles)) as r_groups
       FROM (
-        SELECT expanded_allele as allele
-        FROM UNNEST(@recipient_hla) AS val
-        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
-          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
-             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
-        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+        SELECT 
+          ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
+        FROM (
+          SELECT val, expanded_allele
+          FROM UNNEST(@recipient_hla) AS val
+          LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+            ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+               REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+          CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+        )
+        WHERE expanded_allele LIKE '%*%'
+        GROUP BY val
       )
-      WHERE allele LIKE '%*%'
     ),
 
-    -- 3. Resolve Donor Serotypes into a single array
-    resolved_donor AS (
-      SELECT ARRAY_AGG(DISTINCT allele IGNORE NULLS) AS arr
+    -- 3. Donor Groups (Resolved into a STRUCT array for Union logic)
+    donor_resolved AS (
+      SELECT ARRAY_AGG(STRUCT(expanded_alleles)) as d_groups
       FROM (
-        SELECT expanded_allele as allele
-        FROM UNNEST(@donor_hla) AS val
-        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
-          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
-             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
-        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+        SELECT 
+          ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
+        FROM (
+          SELECT val, expanded_allele
+          FROM UNNEST(@donor_hla) AS val
+          LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+            ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+               REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+          CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
+        )
+        WHERE expanded_allele LIKE '%*%'
+        GROUP BY val
       )
-      WHERE allele LIKE '%*%'
+    ),
+
+    -- 4. Flattened recipient list for allele-level matching (ranking)
+    recipient_alleles_flat AS (
+      SELECT ARRAY_AGG(DISTINCT ma IGNORE NULLS) as arr 
+      FROM recipient_resolved rr, UNNEST(rr.r_groups) rg, UNNEST(rg.expanded_alleles) ma
     ),
 
     -- Pre-filter rows
     filtered_rows AS (
-      SELECT t.epitope_name, t.alleles, t.required_alleles, t.theoretical, ra.arr AS user_arr, rr.arr AS recipient_arr, rd.arr AS donor_arr
+      SELECT t.epitope_name, t.alleles, t.required_alleles, t.theoretical, ra.arr AS user_arr
       FROM `epitopefinder-458404`.epitopes.HLA_data AS t
       CROSS JOIN resolved_antibodies AS ra
-      CROSS JOIN resolved_recipient AS rr
-      CROSS JOIN resolved_donor AS rd
       WHERE EXISTS (
         SELECT 1 FROM UNNEST(t.alleles) AS a
         WHERE a IN UNNEST(ra.arr)
@@ -135,8 +149,22 @@ def fetch_bq_epitopes(request):
       SELECT
         t.epitope_name AS `Epitope Name`,
         t.theoretical AS `Theoretical`,
-        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN UNNEST(t.recipient_arr)) AS cached_hasS,
-        EXISTS(SELECT 1 FROM UNNEST(t.alleles) AS a WHERE a IN UNNEST(t.donor_arr)) AS cached_hasD,
+        -- cached_hasS: True if epitope is present in ALL alleles of AT LEAST ONE recipient input (Intersection)
+        EXISTS (
+          SELECT 1 FROM UNNEST(rr.r_groups) rg
+          WHERE (
+            SELECT COUNT(1) FROM UNNEST(rg.expanded_alleles) ma 
+            WHERE ma IN UNNEST(t.alleles)
+          ) = ARRAY_LENGTH(rg.expanded_alleles)
+        ) AS cached_hasS,
+        -- cached_hasD: True if epitope is present in ANY allele of AT LEAST ONE donor input (Union)
+        EXISTS (
+          SELECT 1 FROM UNNEST(dr.d_groups) dg
+          WHERE EXISTS (
+            SELECT 1 FROM UNNEST(dg.expanded_alleles) ma
+            WHERE ma IN UNNEST(t.alleles)
+          )
+        ) AS cached_hasD,
         ARRAY(
           SELECT a FROM UNNEST(t.alleles) AS a
           WHERE a IN UNNEST(t.user_arr)
@@ -148,15 +176,15 @@ def fetch_bq_epitopes(request):
             ra != '' AND
             ra NOT IN UNNEST(t.user_arr)
         ) AS `Missing Required Alleles`,
-        t.recipient_arr, -- pass it through
-        t.user_arr       -- pass expanded user alleles through
+        (SELECT arr FROM recipient_alleles_flat) as recipient_arr -- for ranking
       FROM
         filtered_rows AS t
+      CROSS JOIN recipient_resolved rr
+      CROSS JOIN donor_resolved dr
     )
     
     SELECT
-      * EXCEPT(recipient_arr, user_arr),
-      user_arr AS expanded_input_alleles,
+      * EXCEPT(recipient_arr),
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
       CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`,
       
@@ -168,10 +196,9 @@ def fetch_bq_epitopes(request):
     FROM
       matches AS m
     ORDER BY
-      -- RANKING LOGIC:
-      `Self_Match_Count` ASC,              -- 1. Least "S" on top
-      `Number of Positive Matches` DESC,   -- 2. More Positive matches on top
-      `Number of Missing Required Alleles` ASC; -- 3. Less Negative matches on top
+      `Self_Match_Count` ASC,
+      `Number of Positive Matches` DESC,
+      `Number of Missing Required Alleles` ASC;
     """
 
     job_config = bigquery.QueryJobConfig(
