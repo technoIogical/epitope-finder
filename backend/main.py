@@ -123,7 +123,7 @@ def fetch_bq_epitopes(request):
         COUNT(DISTINCT CASE WHEN af.a IS NOT NULL AND rf.a IS NOT NULL THEN ta END) as self_match_count
       FROM `epitopefinder-458404`.epitopes.HLA_data t
       CROSS JOIN UNNEST(t.alleles) ta
-      JOIN antibody_flat af ON ta = af.a
+      LEFT JOIN antibody_flat af ON ta = af.a
       LEFT JOIN recipient_flat rf ON ta = rf.a
       GROUP BY 1, 2, 3
     ),
@@ -171,7 +171,12 @@ def fetch_bq_epitopes(request):
       GROUP BY 1
     ),
 
-    -- 8. Final Assembly
+    -- 8. Get global list of expanded antibody alleles for frontend columns
+    antibody_alleles AS (
+      SELECT ARRAY_AGG(a) as arr FROM antibody_flat
+    ),
+
+    -- 9. Final Assembly
     final_output AS (
       SELECT 
         t.epitope_name AS `Epitope Name`,
@@ -180,14 +185,16 @@ def fetch_bq_epitopes(request):
         COALESCE(ds.has_D, false) as cached_hasD,
         t.positive_matches AS `Positive Matches`,
         COALESCE(mr.missing, []) as `Missing Required Alleles`,
-        t.self_match_count AS `Self_Match_Count`
+        t.self_match_count AS `Self_Match_Count`,
+        aa.arr as expanded_input_alleles
       FROM base_matches t
+      CROSS JOIN antibody_alleles aa
       LEFT JOIN s_status ss ON t.epitope_name = ss.epitope_name
       LEFT JOIN d_status ds ON t.epitope_name = ds.epitope_name
       LEFT JOIN missing_required mr ON t.epitope_name = mr.epitope_name
     )
 
-    -- 9. Final SELECT with only scalar functions (Safe for production)
+    -- 10. Final SELECT with only scalar functions (Safe for production)
     SELECT
       *,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
