@@ -90,48 +90,44 @@ def fetch_bq_epitopes(request):
       WHERE allele LIKE '%*%'
     ),
     
-    -- 2. Recipient Groups (Resolved into a STRUCT array for Intersection logic)
-    recipient_resolved AS (
-      SELECT ARRAY_AGG(STRUCT(expanded_alleles)) as r_groups
+    -- 2. Recipient Groups
+    recipient_groups AS (
+      SELECT 
+        val as original_input,
+        ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
       FROM (
-        SELECT 
-          ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
-        FROM (
-          SELECT val, expanded_allele
-          FROM UNNEST(@recipient_hla) AS val
-          LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
-            ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
-               REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
-          CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
-        )
-        WHERE expanded_allele LIKE '%*%'
-        GROUP BY val
+        SELECT val, expanded_allele
+        FROM UNNEST(@recipient_hla) AS val
+        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
       )
+      WHERE expanded_allele LIKE '%*%'
+      GROUP BY val
     ),
 
-    -- 3. Donor Groups (Resolved into a STRUCT array for Union logic)
-    donor_resolved AS (
-      SELECT ARRAY_AGG(STRUCT(expanded_alleles)) as d_groups
+    -- 3. Donor Groups
+    donor_groups AS (
+      SELECT 
+        val as original_input,
+        ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
       FROM (
-        SELECT 
-          ARRAY_AGG(DISTINCT expanded_allele IGNORE NULLS) as expanded_alleles
-        FROM (
-          SELECT val, expanded_allele
-          FROM UNNEST(@donor_hla) AS val
-          LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
-            ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
-               REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
-          CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
-        )
-        WHERE expanded_allele LIKE '%*%'
-        GROUP BY val
+        SELECT val, expanded_allele
+        FROM UNNEST(@donor_hla) AS val
+        LEFT JOIN `epitopefinder-458404`.epitopes.serotype_mapping AS m 
+          ON REGEXP_REPLACE(REPLACE(val, '-', ''), r'^([a-zA-Z]+)0+', r'\\1') = 
+             REGEXP_REPLACE(REPLACE(m.serotype, '-', ''), r'^([a-zA-Z]+)0+', r'\\1')
+        CROSS JOIN UNNEST(CASE WHEN m.alleles IS NOT NULL THEN m.alleles ELSE [val] END) AS expanded_allele
       )
+      WHERE expanded_allele LIKE '%*%'
+      GROUP BY val
     ),
 
-    -- 4. Flattened recipient list for allele-level matching (ranking)
+    -- 4. All relevant alleles for ranking
     recipient_alleles_flat AS (
       SELECT ARRAY_AGG(DISTINCT ma IGNORE NULLS) as arr 
-      FROM recipient_resolved rr, UNNEST(rr.r_groups) rg, UNNEST(rg.expanded_alleles) ma
+      FROM recipient_groups rg, UNNEST(rg.expanded_alleles) ma
     ),
 
     -- Pre-filter rows
@@ -145,26 +141,35 @@ def fetch_bq_epitopes(request):
       )
     ),
     
-    matches AS (
+    -- Evaluate groups using joins to avoid correlated subqueries
+    matches_s AS (
+      SELECT 
+        t.epitope_name,
+        LOGICAL_OR(
+          (SELECT COUNT(1) FROM UNNEST(rg.expanded_alleles) ma WHERE ma IN UNNEST(t.alleles)) = ARRAY_LENGTH(rg.expanded_alleles)
+        ) as cached_hasS
+      FROM filtered_rows t
+      LEFT JOIN recipient_groups rg ON TRUE
+      GROUP BY t.epitope_name
+    ),
+
+    matches_d AS (
+      SELECT 
+        t.epitope_name,
+        LOGICAL_OR(
+          EXISTS(SELECT 1 FROM UNNEST(dg.expanded_alleles) ma WHERE ma IN UNNEST(t.alleles))
+        ) as cached_hasD
+      FROM filtered_rows t
+      LEFT JOIN donor_groups dg ON TRUE
+      GROUP BY t.epitope_name
+    ),
+
+    final_data AS (
       SELECT
         t.epitope_name AS `Epitope Name`,
         t.theoretical AS `Theoretical`,
-        -- cached_hasS: True if epitope is present in ALL alleles of AT LEAST ONE recipient input (Intersection)
-        EXISTS (
-          SELECT 1 FROM UNNEST(rr.r_groups) rg
-          WHERE (
-            SELECT COUNT(1) FROM UNNEST(rg.expanded_alleles) ma 
-            WHERE ma IN UNNEST(t.alleles)
-          ) = ARRAY_LENGTH(rg.expanded_alleles)
-        ) AS cached_hasS,
-        -- cached_hasD: True if epitope is present in ANY allele of AT LEAST ONE donor input (Union)
-        EXISTS (
-          SELECT 1 FROM UNNEST(dr.d_groups) dg
-          WHERE EXISTS (
-            SELECT 1 FROM UNNEST(dg.expanded_alleles) ma
-            WHERE ma IN UNNEST(t.alleles)
-          )
-        ) AS cached_hasD,
+        COALESCE(ms.cached_hasS, false) as cached_hasS,
+        COALESCE(md.cached_hasD, false) as cached_hasD,
         ARRAY(
           SELECT a FROM UNNEST(t.alleles) AS a
           WHERE a IN UNNEST(t.user_arr)
@@ -176,11 +181,11 @@ def fetch_bq_epitopes(request):
             ra != '' AND
             ra NOT IN UNNEST(t.user_arr)
         ) AS `Missing Required Alleles`,
-        (SELECT arr FROM recipient_alleles_flat) as recipient_arr -- for ranking
+        (SELECT arr FROM recipient_alleles_flat) as recipient_arr
       FROM
         filtered_rows AS t
-      CROSS JOIN recipient_resolved rr
-      CROSS JOIN donor_resolved dr
+      LEFT JOIN matches_s ms ON t.epitope_name = ms.epitope_name
+      LEFT JOIN matches_d md ON t.epitope_name = md.epitope_name
     )
     
     SELECT
@@ -194,7 +199,7 @@ def fetch_bq_epitopes(request):
         WHERE pm IN UNNEST(m.recipient_arr)
       ) AS `Self_Match_Count`
     FROM
-      matches AS m
+      final_data AS m
     ORDER BY
       `Self_Match_Count` ASC,
       `Number of Positive Matches` DESC,
