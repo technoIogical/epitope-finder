@@ -76,7 +76,7 @@ def fetch_bq_epitopes(request):
 
     query = """
     WITH 
-    -- 1. Resolve Antibody Serotypes into a single flattened list of high-res alleles
+    -- 1. Resolve Antibody Serotypes into a single flattened list
     antibody_flat AS (
       SELECT DISTINCT expanded_allele as a
       FROM UNNEST(@input_alleles) AS val
@@ -115,7 +115,7 @@ def fetch_bq_epitopes(request):
         t.epitope_name,
         t.theoretical,
         t.required_alleles,
-        -- has_S: True if epitope is in ANY recipient allele (as if typed one by one)
+        -- has_S: True if epitope is in ANY recipient allele (per instructions to treat as one-by-one input)
         LOGICAL_OR(rf.a IS NOT NULL) as has_S,
         -- has_D: True if epitope is in ANY donor allele
         LOGICAL_OR(df.a IS NOT NULL) as has_D,
@@ -132,7 +132,7 @@ def fetch_bq_epitopes(request):
       HAVING COUNT(af.a) > 0 -- Must match at least one searched allele
     ),
 
-    -- 5. Final Assembly (Pre-calculate missing required alleles to avoid correlation issues)
+    -- 5. Calculate Missing Required Alleles
     missing_data AS (
       SELECT 
         m.epitope_name, 
@@ -165,7 +165,7 @@ def fetch_bq_epitopes(request):
       LEFT JOIN missing_data md ON m.epitope_name = md.epitope_name
     )
 
-    -- 7. Final Selection with scalar functions
+    -- 7. Final Selection
     SELECT
       *,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,

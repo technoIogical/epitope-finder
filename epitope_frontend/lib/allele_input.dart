@@ -310,13 +310,15 @@ class _AlleleInputState extends State<AlleleInput> {
               return fuzzyMatches.take(50);
             },
             onSelected: (String selection) {
-              setState(() {
-                if (!widget.selectedAlleles.contains(selection)) {
+              if (!widget.selectedAlleles.contains(selection)) {
+                setState(() {
                   widget.selectedAlleles.add(selection);
                   widget.onChanged();
-                }
-                _controller.clear();
-              });
+                });
+              }
+              _controller.clear();
+              // Explicitly request focus to ensure dropdown can reappear on next type
+              _internalFocusNode.requestFocus();
             },
             fieldViewBuilder:
                 (context, controller, focusNode, onFieldSubmitted) {
@@ -420,12 +422,12 @@ class _AlleleInputState extends State<AlleleInput> {
                           controller: controller,
                           focusNode: focusNode,
                           onChanged: (val) {
-                            setState(() {});
                             if (val.contains(',') ||
                                 val.contains('\n') ||
                                 val.contains('\t')) {
                               _processMultiInput(val, controller);
                             }
+                            // No need for setState here, controller listener handles it
                           },
                           decoration: const InputDecoration(
                             border: InputBorder.none,
@@ -443,6 +445,8 @@ class _AlleleInputState extends State<AlleleInput> {
                             } else {
                               _processMultiInput(value, controller);
                             }
+                            // Keep focus after submission
+                            focusNode.requestFocus();
                           },
                         ),
                       ),
