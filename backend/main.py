@@ -115,11 +115,11 @@ def fetch_bq_epitopes(request):
 
     -- 4. Calculate matches per recipient group
     recipient_matches AS (
-      SELECT t.epitope_name, LOGICAL_OR(match_count = rg.target_count) as has_S
+      SELECT sm.epitope_name, LOGICAL_OR(sm.match_count = rg.target_count) as has_S
       FROM (
-        SELECT t2.epitope_name, rf.val, COUNT(DISTINCT ta) as match_count
-        FROM `epitopefinder-458404`.epitopes.HLA_data t2
-        CROSS JOIN UNNEST(t2.alleles) ta
+        SELECT t3.epitope_name, rf.val, COUNT(DISTINCT ta) as match_count
+        FROM `epitopefinder-458404`.epitopes.HLA_data t3
+        CROSS JOIN UNNEST(t3.alleles) ta
         JOIN recipient_flat rf ON ta = rf.a
         GROUP BY 1, 2
       ) sm
@@ -129,11 +129,11 @@ def fetch_bq_epitopes(request):
 
     -- 5. Calculate matches per donor group
     donor_matches AS (
-      SELECT t.epitope_name, LOGICAL_OR(match_count = dg.target_count) as has_D
+      SELECT sm.epitope_name, LOGICAL_OR(sm.match_count = dg.target_count) as has_D
       FROM (
-        SELECT t2.epitope_name, df.val, COUNT(DISTINCT ta) as match_count
-        FROM `epitopefinder-458404`.epitopes.HLA_data t2
-        CROSS JOIN UNNEST(t2.alleles) ta
+        SELECT t3.epitope_name, df.val, COUNT(DISTINCT ta) as match_count
+        FROM `epitopefinder-458404`.epitopes.HLA_data t3
+        CROSS JOIN UNNEST(t3.alleles) ta
         JOIN donor_flat df ON ta = df.a
         GROUP BY 1, 2
       ) sm
@@ -141,7 +141,7 @@ def fetch_bq_epitopes(request):
       GROUP BY 1
     ),
 
-    -- 6. Identify matching epitopes for search and calculate Pos matches
+    -- 6. Main matching logic
     base_matches AS (
       SELECT 
         t.epitope_name,
@@ -154,9 +154,9 @@ def fetch_bq_epitopes(request):
       JOIN antibody_flat af ON ta = af.a
       LEFT JOIN recipient_flat rf ON ta = rf.a
       GROUP BY 1, 2, 3
-    ),
+    )
 
-    -- 7. Final Assembly
+    -- 7. Final Result
     SELECT 
       t.epitope_name AS `Epitope Name`,
       t.theoretical AS `Theoretical`,
@@ -164,11 +164,18 @@ def fetch_bq_epitopes(request):
       COALESCE(dm.has_D, false) as cached_hasD,
       t.positive_matches AS `Positive Matches`,
       ARRAY(
-        SELECT ra FROM UNNEST(t.required_alleles) ra 
-        WHERE ra IS NOT NULL AND ra != '' AND ra NOT IN (SELECT a FROM antibody_flat)
+        SELECT ra 
+        FROM UNNEST(t.required_alleles) ra 
+        LEFT JOIN antibody_flat af ON ra = af.a
+        WHERE ra IS NOT NULL AND ra != '' AND af.a IS NULL
       ) as `Missing Required Alleles`,
       CAST(ARRAY_LENGTH(t.positive_matches) AS INT64) AS `Number of Positive Matches`,
-      CAST((SELECT COUNT(1) FROM UNNEST(t.required_alleles) ra WHERE ra IS NOT NULL AND ra != '' AND ra NOT IN (SELECT a FROM antibody_flat)) AS INT64) AS `Number of Missing Required Alleles`,
+      CAST((
+        SELECT COUNT(1) 
+        FROM UNNEST(t.required_alleles) ra 
+        LEFT JOIN antibody_flat af ON ra = af.a
+        WHERE ra IS NOT NULL AND ra != '' AND af.a IS NULL
+      ) AS INT64) AS `Number of Missing Required Alleles`,
       COALESCE(t.self_match_count, 0) as `Self_Match_Count`
     FROM base_matches t
     LEFT JOIN recipient_matches rm ON t.epitope_name = rm.epitope_name
