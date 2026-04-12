@@ -113,13 +113,29 @@ def fetch_bq_epitopes(request):
     ),
     donor_flat AS ( SELECT val, a FROM donor_groups, UNNEST(alleles) a ),
 
-    -- 4. Calculate matches per recipient group
-    recipient_matches AS (
+    -- 4. Main matching logic: Identify epitopes and match alleles in a single pass
+    base_matches AS (
+      SELECT 
+        t.epitope_name,
+        t.theoretical,
+        t.required_alleles,
+        ARRAY_AGG(DISTINCT CASE WHEN af.a IS NOT NULL THEN ta END IGNORE NULLS) as positive_matches,
+        COUNT(DISTINCT CASE WHEN af.a IS NOT NULL AND rf.a IS NOT NULL THEN ta END) as self_match_count
+      FROM `epitopefinder-458404`.epitopes.HLA_data t
+      CROSS JOIN UNNEST(t.alleles) ta
+      JOIN antibody_flat af ON ta = af.a
+      LEFT JOIN recipient_flat rf ON ta = rf.a
+      GROUP BY 1, 2, 3
+    ),
+
+    -- 5. Calculate S status using a flat join (No correlated subqueries)
+    s_status AS (
       SELECT sm.epitope_name, LOGICAL_OR(sm.match_count = rg.target_count) as has_S
       FROM (
-        SELECT t3.epitope_name, rf.val, COUNT(DISTINCT ta) as match_count
-        FROM `epitopefinder-458404`.epitopes.HLA_data t3
-        CROSS JOIN UNNEST(t3.alleles) ta
+        SELECT bm.epitope_name, rf.val, COUNT(DISTINCT ta) as match_count
+        FROM base_matches bm
+        JOIN `epitopefinder-458404`.epitopes.HLA_data t ON bm.epitope_name = t.epitope_name
+        CROSS JOIN UNNEST(t.alleles) ta
         JOIN recipient_flat rf ON ta = rf.a
         GROUP BY 1, 2
       ) sm
@@ -127,13 +143,14 @@ def fetch_bq_epitopes(request):
       GROUP BY 1
     ),
 
-    -- 5. Calculate matches per donor group
-    donor_matches AS (
+    -- 6. Calculate D status using a flat join
+    d_status AS (
       SELECT sm.epitope_name, LOGICAL_OR(sm.match_count = dg.target_count) as has_D
       FROM (
-        SELECT t3.epitope_name, df.val, COUNT(DISTINCT ta) as match_count
-        FROM `epitopefinder-458404`.epitopes.HLA_data t3
-        CROSS JOIN UNNEST(t3.alleles) ta
+        SELECT bm.epitope_name, df.val, COUNT(DISTINCT ta) as match_count
+        FROM base_matches bm
+        JOIN `epitopefinder-458404`.epitopes.HLA_data t ON bm.epitope_name = t.epitope_name
+        CROSS JOIN UNNEST(t.alleles) ta
         JOIN donor_flat df ON ta = df.a
         GROUP BY 1, 2
       ) sm
@@ -141,45 +158,41 @@ def fetch_bq_epitopes(request):
       GROUP BY 1
     ),
 
-    -- 6. Main matching logic
-    base_matches AS (
+    -- 7. Calculate Missing Required Alleles
+    missing_required AS (
       SELECT 
-        t.epitope_name,
-        t.theoretical,
-        t.required_alleles,
-        ARRAY_AGG(DISTINCT ta IGNORE NULLS) as positive_matches,
-        COUNT(DISTINCT CASE WHEN rf.a IS NOT NULL THEN ta END) as self_match_count
-      FROM `epitopefinder-458404`.epitopes.HLA_data t
-      CROSS JOIN UNNEST(t.alleles) ta
-      JOIN antibody_flat af ON ta = af.a
-      LEFT JOIN recipient_flat rf ON ta = rf.a
-      GROUP BY 1, 2, 3
+        bm.epitope_name, 
+        ARRAY_AGG(ra IGNORE NULLS) as missing
+      FROM base_matches bm
+      JOIN `epitopefinder-458404`.epitopes.HLA_data t ON bm.epitope_name = t.epitope_name
+      CROSS JOIN UNNEST(t.required_alleles) ra
+      LEFT JOIN antibody_flat af ON ra = af.a
+      WHERE ra IS NOT NULL AND ra != '' AND af.a IS NULL
+      GROUP BY 1
+    ),
+
+    -- 8. Final Assembly
+    final_output AS (
+      SELECT 
+        t.epitope_name AS `Epitope Name`,
+        t.theoretical AS `Theoretical`,
+        COALESCE(ss.has_S, false) as cached_hasS,
+        COALESCE(ds.has_D, false) as cached_hasD,
+        t.positive_matches AS `Positive Matches`,
+        COALESCE(mr.missing, []) as `Missing Required Alleles`,
+        t.self_match_count AS `Self_Match_Count`
+      FROM base_matches t
+      LEFT JOIN s_status ss ON t.epitope_name = ss.epitope_name
+      LEFT JOIN d_status ds ON t.epitope_name = ds.epitope_name
+      LEFT JOIN missing_required mr ON t.epitope_name = mr.epitope_name
     )
 
-    -- 7. Final Result
-    SELECT 
-      t.epitope_name AS `Epitope Name`,
-      t.theoretical AS `Theoretical`,
-      COALESCE(rm.has_S, false) as cached_hasS,
-      COALESCE(dm.has_D, false) as cached_hasD,
-      t.positive_matches AS `Positive Matches`,
-      ARRAY(
-        SELECT ra 
-        FROM UNNEST(t.required_alleles) ra 
-        LEFT JOIN antibody_flat af ON ra = af.a
-        WHERE ra IS NOT NULL AND ra != '' AND af.a IS NULL
-      ) as `Missing Required Alleles`,
-      CAST(ARRAY_LENGTH(t.positive_matches) AS INT64) AS `Number of Positive Matches`,
-      CAST((
-        SELECT COUNT(1) 
-        FROM UNNEST(t.required_alleles) ra 
-        LEFT JOIN antibody_flat af ON ra = af.a
-        WHERE ra IS NOT NULL AND ra != '' AND af.a IS NULL
-      ) AS INT64) AS `Number of Missing Required Alleles`,
-      COALESCE(t.self_match_count, 0) as `Self_Match_Count`
-    FROM base_matches t
-    LEFT JOIN recipient_matches rm ON t.epitope_name = rm.epitope_name
-    LEFT JOIN donor_matches dm ON t.epitope_name = dm.epitope_name
+    -- 9. Final SELECT with only scalar functions (Safe for production)
+    SELECT
+      *,
+      CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
+      CAST(ARRAY_LENGTH(`Missing Required Alleles`) AS INT64) AS `Number of Missing Required Alleles`
+    FROM final_output
     ORDER BY
       `Self_Match_Count` ASC,
       `Number of Positive Matches` DESC,
