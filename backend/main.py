@@ -76,7 +76,7 @@ def fetch_bq_epitopes(request):
 
     query = """
     WITH 
-    -- 1. Resolve Antibody Serotypes into a single flattened list
+    -- 1. Resolve Antibody Serotypes into a single flattened list of high-res alleles
     antibody_flat AS (
       SELECT DISTINCT expanded_allele as a
       FROM UNNEST(@input_alleles) AS val
@@ -145,10 +145,10 @@ def fetch_bq_epitopes(request):
       GROUP BY 1
     ),
 
-    -- 6. Global list of expanded antibody alleles for frontend columns
-    antibody_alleles AS (
-      SELECT ARRAY_AGG(a) as arr FROM antibody_flat
-    ),
+    -- 6. Global lists of expanded alleles for frontend
+    antibody_alleles AS ( SELECT ARRAY_AGG(a) as arr FROM antibody_flat ),
+    recipient_alleles AS ( SELECT ARRAY_AGG(a) as arr FROM recipient_flat ),
+    donor_alleles AS ( SELECT ARRAY_AGG(a) as arr FROM donor_flat ),
 
     final_results AS (
       SELECT 
@@ -160,14 +160,16 @@ def fetch_bq_epitopes(request):
         COALESCE(md.missing, []) as `Missing Required Alleles`,
         m.self_match_count AS `Self_Match_Count`,
         aa.arr as expanded_input_alleles,
-        (SELECT ARRAY_AGG(a) FROM recipient_flat) as expanded_recipient_alleles,
-        (SELECT ARRAY_AGG(a) FROM donor_flat) as expanded_donor_alleles
+        ra.arr as expanded_recipient_alleles,
+        da.arr as expanded_donor_alleles
       FROM matches m
       CROSS JOIN antibody_alleles aa
+      CROSS JOIN recipient_alleles ra
+      CROSS JOIN donor_alleles da
       LEFT JOIN missing_data md ON m.epitope_name = md.epitope_name
     )
 
-    -- 7. Final Selection
+    -- 7. Final Selection with scalar functions
     SELECT
       *,
       CAST(ARRAY_LENGTH(`Positive Matches`) AS INT64) AS `Number of Positive Matches`,
