@@ -227,13 +227,31 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             (firstRow['expanded_input_alleles'] as List? ?? [])
                 .map((e) => e.toString())
                 .toList();
+        final List<String> expandedRecipient =
+            (firstRow['expanded_recipient_alleles'] as List? ?? [])
+                .map((e) => e.toString())
+                .toList();
+        final List<String> expandedDonor =
+            (firstRow['expanded_donor_alleles'] as List? ?? [])
+                .map((e) => e.toString())
+                .toList();
 
         List<String> positiveCols = List.from(expandedAntibodies)..sort();
         _userAllelesSet = expandedAntibodies.toSet();
 
+        // Update the Sets used by the painter with expanded alleles
+        _recipientHlaSet = {
+          ..._selectedRecipientHla,
+          ...expandedRecipient,
+        };
+        _donorHlaSet = {
+          ..._selectedDonorHla,
+          ...expandedDonor,
+        };
+
         Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
-        
+
         for (var rawRow in rawRows) {
           final Map<String, dynamic> row =
               Map<String, dynamic>.from(rawRow as Map);
@@ -261,7 +279,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
           // Massive penalty for Self-Antibody to force it to the bottom
           if (hasS) {
-            matchRatio -= 1000.0; 
+            matchRatio -= 1000.0;
           }
 
           processedRows.add({
@@ -282,7 +300,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         processedRows.sort((a, b) {
           int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
           if (ratioCmp != 0) return ratioCmp;
-          
+
           // Tie-breaker
           int posA = a['Number of Positive Matches'] ?? 0;
           int posB = b['Number of Positive Matches'] ?? 0;
@@ -334,7 +352,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         _epitopeResults.sort((a, b) {
           int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
           if (ratioCmp != 0) return ratioCmp;
-          
+
           int posA = a['Number of Positive Matches'] ?? 0;
           int posB = b['Number of Positive Matches'] ?? 0;
           return posB.compareTo(posA);
@@ -907,8 +925,10 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
               Icon(
                 isSorted
                     ? (!_sortAscending // Re-mapped UI Arrows to match user request
-                        ? Icons.arrow_upward // Arrow Up: Big numbers on top (Descending)
-                        : Icons.arrow_downward) // Arrow Down: Small numbers on top (Ascending)
+                        ? Icons
+                            .arrow_upward // Arrow Up: Big numbers on top (Descending)
+                        : Icons
+                            .arrow_downward) // Arrow Down: Small numbers on top (Ascending)
                     : Icons.sort,
                 size: 12,
                 color: isSorted ? Colors.blue : Colors.grey,

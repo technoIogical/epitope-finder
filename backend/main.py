@@ -159,7 +159,9 @@ def fetch_bq_epitopes(request):
         m.positive_matches AS `Positive Matches`,
         COALESCE(md.missing, []) as `Missing Required Alleles`,
         m.self_match_count AS `Self_Match_Count`,
-        aa.arr as expanded_input_alleles
+        aa.arr as expanded_input_alleles,
+        (SELECT ARRAY_AGG(a) FROM recipient_flat) as expanded_recipient_alleles,
+        (SELECT ARRAY_AGG(a) FROM donor_flat) as expanded_donor_alleles
       FROM matches m
       CROSS JOIN antibody_alleles aa
       LEFT JOIN missing_data md ON m.epitope_name = md.epitope_name
