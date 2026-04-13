@@ -43,6 +43,11 @@ class _AlleleInputState extends State<AlleleInput> {
     _internalFocusNode = widget.focusNode ?? FocusNode();
     _internalFocusNode.addListener(_handleFocusChange);
 
+    // Forces the outer InputDecorator to update its 'isEmpty' status when typing
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+
     // --- HARDWARE KEY LISTENER FOR BACKSPACE DELETION ---
     _internalFocusNode.onKeyEvent = (FocusNode node, KeyEvent event) {
       if (event.logicalKey == LogicalKeyboardKey.backspace) {
@@ -293,10 +298,12 @@ class _AlleleInputState extends State<AlleleInput> {
                 final bNorm = _normalize(bLower);
 
                 // Exact starts with
-                if (aLower.startsWith(query) && !bLower.startsWith(query))
+                if (aLower.startsWith(query) && !bLower.startsWith(query)) {
                   return -1;
-                if (!aLower.startsWith(query) && bLower.startsWith(query))
+                }
+                if (!aLower.startsWith(query) && bLower.startsWith(query)) {
                   return 1;
+                }
 
                 // Normalized starts with
                 if (aNorm.startsWith(normalizedQuery) &&
