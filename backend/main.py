@@ -113,6 +113,7 @@ def fetch_bq_epitopes(request):
     matches AS (
       SELECT 
         t.epitope_name,
+        t.locus,
         t.theoretical,
         t.required_alleles,
         -- has_S: True if epitope is in ANY recipient allele (per instructions to treat as one-by-one input)
@@ -128,7 +129,7 @@ def fetch_bq_epitopes(request):
       LEFT JOIN antibody_flat af ON ta = af.a
       LEFT JOIN recipient_flat rf ON ta = rf.a
       LEFT JOIN donor_flat df ON ta = df.a
-      GROUP BY 1, 2, 3
+      GROUP BY 1, 2, 3, 4
       HAVING COUNT(af.a) > 0 -- Must match at least one searched allele
     ),
 
@@ -136,13 +137,16 @@ def fetch_bq_epitopes(request):
     missing_data AS (
       SELECT 
         m.epitope_name, 
+        m.locus,
         ARRAY_AGG(ra IGNORE NULLS) as missing
       FROM matches m
-      JOIN `epitopefinder-458404`.epitopes.HLA_data t ON m.epitope_name = t.epitope_name
+      JOIN `epitopefinder-458404`.epitopes.HLA_data t 
+        ON m.epitope_name = t.epitope_name 
+        AND m.locus = t.locus
       CROSS JOIN UNNEST(t.required_alleles) ra
       LEFT JOIN antibody_flat af ON ra = af.a
       WHERE ra IS NOT NULL AND ra != '' AND af.a IS NULL
-      GROUP BY 1
+      GROUP BY 1, 2
     ),
 
     -- 6. Global lists of expanded alleles for frontend
@@ -166,7 +170,9 @@ def fetch_bq_epitopes(request):
       CROSS JOIN antibody_alleles aa
       CROSS JOIN recipient_alleles ra
       CROSS JOIN donor_alleles da
-      LEFT JOIN missing_data md ON m.epitope_name = md.epitope_name
+      LEFT JOIN missing_data md 
+        ON m.epitope_name = md.epitope_name 
+        AND m.locus = md.locus
     )
 
     -- 7. Final Selection with scalar functions
