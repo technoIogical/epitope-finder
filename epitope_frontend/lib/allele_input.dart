@@ -15,6 +15,10 @@ class AlleleInput extends StatefulWidget {
   final bool isWarming;
   final FocusNode? focusNode;
 
+  // Added to allow cross-referencing for highlighting
+  final List<String>? recipientAlleles;
+  final List<String>? donorAlleles;
+
   const AlleleInput({
     super.key,
     required this.label,
@@ -25,6 +29,8 @@ class AlleleInput extends StatefulWidget {
     this.fillColor,
     this.isWarming = false,
     this.focusNode,
+    this.recipientAlleles,
+    this.donorAlleles,
   });
 
   @override
@@ -43,12 +49,10 @@ class _AlleleInputState extends State<AlleleInput> {
     _internalFocusNode = widget.focusNode ?? FocusNode();
     _internalFocusNode.addListener(_handleFocusChange);
 
-    // Forces the outer InputDecorator to update its 'isEmpty' status when typing
     _controller.addListener(() {
       if (mounted) setState(() {});
     });
 
-    // --- HARDWARE KEY LISTENER FOR BACKSPACE DELETION ---
     _internalFocusNode.onKeyEvent = (FocusNode node, KeyEvent event) {
       if (event.logicalKey == LogicalKeyboardKey.backspace) {
         if (_controller.text.isEmpty && widget.selectedAlleles.isNotEmpty) {
@@ -94,35 +98,33 @@ class _AlleleInputState extends State<AlleleInput> {
     }
   }
 
-  // --- SUB-CLASS SHADE VARIATIONS ---
   BoxDecoration _getDropdownItemDecoration(String allele) {
     final upper = allele.toUpperCase();
     Color bgColor = Colors.white;
 
     if (upper.startsWith('A*') || upper.startsWith('A-')) {
-      bgColor = const Color(0xFFFEE4CB); // Soft Peach
+      bgColor = const Color(0xFFFEE4CB);
     } else if (upper.startsWith('B*') || upper.startsWith('B-')) {
-      bgColor = const Color(0xFFEAE4F2); // Soft Lavender
+      bgColor = const Color(0xFFEAE4F2);
     } else if (upper.startsWith('C*') || upper.startsWith('C-')) {
-      bgColor = const Color(0xFFD6EAF8); // Soft Sky Blue
+      bgColor = const Color(0xFFD6EAF8);
     } else if (upper.startsWith('DRB1')) {
-      bgColor = const Color(0xFFC0E8E4); // DRB1 (Light Teal)
+      bgColor = const Color(0xFFC0E8E4);
     } else if (upper.startsWith('DR')) {
-      bgColor = const Color(0xFFDDF2F0); // Other DR (Lighter Teal/Mint)
+      bgColor = const Color(0xFFDDF2F0);
     } else if (upper.startsWith('DQB1')) {
-      bgColor = const Color(0xFFEAAFAF); // DQB1 (Muted Rose)
+      bgColor = const Color(0xFFEAAFAF);
     } else if (upper.startsWith('DQA1') || upper.startsWith('DQ')) {
-      bgColor = const Color(0xFFF5D6D6); // DQA1 (Lighter Rose)
+      bgColor = const Color(0xFFF5D6D6);
     } else if (upper.startsWith('DPB1')) {
-      bgColor = const Color(0xFFBCBBE0); // DPB1 (Soft Periwinkle)
+      bgColor = const Color(0xFFBCBBE0);
     } else if (upper.startsWith('DPA1') || upper.startsWith('DP')) {
-      bgColor = const Color(0xFFDEDDF0); // DPA1 (Lighter Periwinkle)
+      bgColor = const Color(0xFFDEDDF0);
     }
 
     return BoxDecoration(color: bgColor);
   }
 
-  // ── File Upload Logic ──────────────────
   Future<void> _pickAndParseFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -198,12 +200,39 @@ class _AlleleInputState extends State<AlleleInput> {
     super.dispose();
   }
 
-  // Helper to normalize strings for comparison (remove dashes and leading zeros)
+  // Normalizer for EXACT dropdown matches
   String _normalize(String s) {
     return s
         .replaceAll('-', '')
         .toUpperCase()
         .replaceAllMapped(RegExp(r'^([A-Z]+)0+'), (m) => m.group(1)!);
+  }
+
+  // NEW: Highly robust HLA parser for dynamic Serotype-to-Allele highlighting
+  bool _isRelated(String a, String b) {
+    String simplify(String s) {
+      // 1. Remove all non-alphanumeric characters (strips *, :, -)
+      String clean = s.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      
+      // 2. Remove 'W' (used in historical serotypes like Cw1, DPw3)
+      clean = clean.replaceAll('W', '');
+      
+      // 3. Flatten complex loci to base locus for serotype matching (e.g., DRB1 -> DR)
+      clean = clean.replaceFirst(RegExp(r'^DRB[1345]'), 'DR')
+                   .replaceFirst(RegExp(r'^DQ[AB]1'), 'DQ')
+                   .replaceFirst(RegExp(r'^DP[AB]1'), 'DP');
+                   
+      // 4. Remove leading zeros directly after the locus letters (e.g. A0101 -> A101)
+      clean = clean.replaceAllMapped(RegExp(r'^([A-Z]+)0+'), (m) => m.group(1)!);
+      
+      return clean;
+    }
+
+    String normA = simplify(a);
+    String normB = simplify(b);
+
+    // If typing is "A1" (norm: A1) and Antibody is "A*01:01" (norm: A101), this will match.
+    return normA.startsWith(normB) || normB.startsWith(normA);
   }
 
   void _processMultiInput(String input, TextEditingController controller) {
@@ -225,7 +254,6 @@ class _AlleleInputState extends State<AlleleInput> {
       for (String entry in validAlleles) {
         final String normalizedEntry = _normalize(entry);
 
-        // Find match in allAlleles using normalization
         String? match;
         try {
           match = widget.allAlleles.firstWhere(
@@ -261,7 +289,6 @@ class _AlleleInputState extends State<AlleleInput> {
       widget.onChanged();
     }
 
-    // Clear the text field after successful processing
     controller.clear();
   }
 
@@ -281,7 +308,6 @@ class _AlleleInputState extends State<AlleleInput> {
               final String query = textEditingValue.text.toLowerCase();
               final String normalizedQuery = _normalize(query);
 
-              // Prioritize exact normalized matches (e.g. typing "DP3" matching "DP-03")
               final List<String> fuzzyMatches =
                   widget.allAlleles.where((option) {
                 final String normalizedOption =
@@ -290,22 +316,15 @@ class _AlleleInputState extends State<AlleleInput> {
                     option.toLowerCase().contains(query);
               }).toList();
 
-              // Sort results: Starts with query first, then normalized starts with, then contains
               fuzzyMatches.sort((a, b) {
                 final aLower = a.toLowerCase();
                 final bLower = b.toLowerCase();
                 final aNorm = _normalize(aLower);
                 final bNorm = _normalize(bLower);
 
-                // Exact starts with
-                if (aLower.startsWith(query) && !bLower.startsWith(query)) {
-                  return -1;
-                }
-                if (!aLower.startsWith(query) && bLower.startsWith(query)) {
-                  return 1;
-                }
+                if (aLower.startsWith(query) && !bLower.startsWith(query)) return -1;
+                if (!aLower.startsWith(query) && bLower.startsWith(query)) return 1;
 
-                // Normalized starts with
                 if (aNorm.startsWith(normalizedQuery) &&
                     !bNorm.startsWith(normalizedQuery)) return -1;
                 if (!aNorm.startsWith(normalizedQuery) &&
@@ -324,7 +343,6 @@ class _AlleleInputState extends State<AlleleInput> {
                 });
               }
               _controller.clear();
-              // Explicitly request focus to ensure dropdown can reappear on next type
               _internalFocusNode.requestFocus();
             },
             fieldViewBuilder:
@@ -375,20 +393,47 @@ class _AlleleInputState extends State<AlleleInput> {
                     children: [
                       ...widget.selectedAlleles.map(
                         (allele) {
+                          // Evaluates matches using the robust parser
                           final bool isSerotype = !allele.contains('*');
+                          final bool isSelfMatch = widget.recipientAlleles
+                                  ?.any((r) => _isRelated(r, allele)) ?? false;
+                          final bool isDsa = widget.donorAlleles
+                                  ?.any((d) => _isRelated(d, allele)) ?? false;
+
+                          Color chipBgColor;
+                          Color chipBorderColor;
+                          Color textColor;
+                          Color iconColor;
+
+                          if (isSelfMatch) {
+                            chipBgColor = Colors.blue.shade800; // Dark Blue
+                            chipBorderColor = Colors.blue.shade900;
+                            textColor = Colors.white;
+                            iconColor = Colors.white70;
+                          } else if (isDsa) {
+                            chipBgColor = Colors.orange.shade600; // Orange
+                            chipBorderColor = Colors.orange.shade800;
+                            textColor = Colors.white;
+                            iconColor = Colors.white70;
+                          } else if (isSerotype) {
+                            chipBgColor = Colors.blue[100]!; // Light blue
+                            chipBorderColor = Colors.blue.shade300;
+                            textColor = Colors.black87;
+                            iconColor = Colors.blue[900]!;
+                          } else {
+                            chipBgColor = Colors.grey[200]!; // Default grey
+                            chipBorderColor = Colors.grey.shade400;
+                            textColor = Colors.black87;
+                            iconColor = Colors.grey;
+                          }
+
                           return Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isSerotype
-                                  ? Colors.blue[100]
-                                  : Colors.grey[200],
+                              color: chipBgColor,
                               borderRadius: BorderRadius.circular(2),
-                              border: Border.all(
-                                color: isSerotype
-                                    ? Colors.blue.shade300
-                                    : Colors.grey.shade400,
-                              ),
+                              border: Border.all(color: chipBorderColor),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -397,9 +442,10 @@ class _AlleleInputState extends State<AlleleInput> {
                                   allele,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    fontWeight: isSerotype
+                                    fontWeight: isSerotype || isSelfMatch || isDsa
                                         ? FontWeight.bold
                                         : FontWeight.normal,
+                                    color: textColor,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
@@ -413,9 +459,7 @@ class _AlleleInputState extends State<AlleleInput> {
                                   child: Icon(
                                     Icons.close,
                                     size: 14,
-                                    color: isSerotype
-                                        ? Colors.blue[900]
-                                        : Colors.grey,
+                                    color: iconColor,
                                   ),
                                 ),
                               ],
@@ -434,7 +478,6 @@ class _AlleleInputState extends State<AlleleInput> {
                                 val.contains('\t')) {
                               _processMultiInput(val, controller);
                             }
-                            // No need for setState here, controller listener handles it
                           },
                           decoration: const InputDecoration(
                             border: InputBorder.none,
@@ -452,7 +495,6 @@ class _AlleleInputState extends State<AlleleInput> {
                             } else {
                               _processMultiInput(value, controller);
                             }
-                            // Keep focus after submission
                             focusNode.requestFocus();
                           },
                         ),

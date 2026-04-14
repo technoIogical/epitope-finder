@@ -478,6 +478,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                       onChanged: () => setState(() {}),
                       isWarming: _isWarming,
                       focusNode: _antibodyFocusNode,
+                      recipientAlleles: _selectedRecipientHla, // NEW
+                      donorAlleles: _selectedDonorHla,         // NEW
                     ),
                     const SizedBox(height: 12),
                     AlleleInput(
