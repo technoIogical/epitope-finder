@@ -256,6 +256,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           final Map<String, dynamic> row =
               Map<String, dynamic>.from(rawRow as Map);
 
+          int posCount = row['Number of Positive Matches'] ?? 0;
+          int negCount = row['Number of Missing Required Alleles'] ?? 0;
+
+          // --- NEW: Data Filtering Logic ---
+          // 1. Filter out if 10 or more negative alleles
+          // 2. Filter out if more negative alleles than positive alleles
+          if (negCount >= 10 || negCount > posCount) {
+            continue; // Skip this epitope completely
+          }
+
           final List<String> positiveMatches =
               (row['Positive Matches'] as List? ?? [])
                   .map((e) => e.toString())
@@ -265,14 +275,12 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   .map((e) => e.toString())
                   .toList();
 
+          // Only add negative columns for rows that passed the filter
           negativeColSet.addAll(missingRequired);
 
           bool hasS = row['cached_hasS'] == true;
           bool hasD = row['cached_hasD'] == true;
           bool isTheoretical = row['Theoretical'] == true;
-
-          int posCount = row['Number of Positive Matches'] ?? 0;
-          int negCount = row['Number of Missing Required Alleles'] ?? 0;
 
           // --- THE NEW MATH LOGIC (Pos - Neg) ---
           double matchRatio = posCount.toDouble() - negCount.toDouble();
@@ -478,8 +486,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                       onChanged: () => setState(() {}),
                       isWarming: _isWarming,
                       focusNode: _antibodyFocusNode,
-                      recipientAlleles: _selectedRecipientHla, // NEW
-                      donorAlleles: _selectedDonorHla,         // NEW
+                      recipientAlleles: _selectedRecipientHla,
+                      donorAlleles: _selectedDonorHla,
                     ),
                     const SizedBox(height: 12),
                     AlleleInput(
