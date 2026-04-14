@@ -301,7 +301,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
         // Apply filters & build the actual matrix view
         _applyFilters();
         _sortColumn = null; // Reset sort
-
       } else {
         setState(() {
           _errorMessage = 'Server Error: ${response.statusCode}';
@@ -327,7 +326,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
       int posCount = row['Number of Positive Matches'];
       int negCount = row['Number of Missing Required Alleles'];
 
-      if (posCount >= _minPositiveThreshold && negCount <= _maxNegativeThreshold) {
+      if (posCount >= _minPositiveThreshold &&
+          negCount <= _maxNegativeThreshold) {
         filteredRows.add(row);
         negativeColSet.addAll(row['cached_missingRequiredSet'] as Set<String>);
       }
@@ -387,15 +387,16 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   // NEW: Parameter Dialog for dynamic filtering
   Future<void> _showParameterDialog() async {
-    TextEditingController posCtrl = TextEditingController(text: _minPositiveThreshold.toString());
-    TextEditingController negCtrl = TextEditingController(text: _maxNegativeThreshold.toString());
+    TextEditingController posCtrl =
+        TextEditingController(text: _minPositiveThreshold.toString());
+    TextEditingController negCtrl =
+        TextEditingController(text: _maxNegativeThreshold.toString());
     String? errorMsg;
 
     await showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(builder: (context, setDialogState) {
             return AlertDialog(
               title: const Row(
                 children: [
@@ -408,7 +409,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Filter which epitopes are displayed:", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const Text("Filter which epitopes are displayed:",
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
                   const SizedBox(height: 16),
                   TextField(
                     controller: posCtrl,
@@ -435,7 +437,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                       if (val.isNotEmpty) {
                         int? parsed = int.tryParse(val);
                         if (parsed != null && parsed > 10) {
-                          setDialogState(() => errorMsg = 'Over negative limit (Max 10)');
+                          setDialogState(
+                              () => errorMsg = 'Over negative limit (Max 10)');
                         } else {
                           setDialogState(() => errorMsg = null);
                         }
@@ -453,26 +456,29 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                       errorMsg = null;
                     });
                   },
-                  child: const Text('Reset', style: TextStyle(color: Colors.grey)),
+                  child:
+                      const Text('Reset', style: TextStyle(color: Colors.grey)),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: errorMsg != null ? null : () {
-                    int newPos = int.tryParse(posCtrl.text) ?? 0;
-                    int newNeg = int.tryParse(negCtrl.text) ?? 10;
-                    if (newNeg > 10) newNeg = 10; // Safety cap
-                    
-                    setState(() {
-                      _minPositiveThreshold = newPos;
-                      _maxNegativeThreshold = newNeg;
-                    });
-                    
-                    _applyFilters();
-                    Navigator.pop(context);
-                  },
+                  onPressed: errorMsg != null
+                      ? null
+                      : () {
+                          int newPos = int.tryParse(posCtrl.text) ?? 0;
+                          int newNeg = int.tryParse(negCtrl.text) ?? 10;
+                          if (newNeg > 10) newNeg = 10; // Safety cap
+
+                          setState(() {
+                            _minPositiveThreshold = newPos;
+                            _maxNegativeThreshold = newNeg;
+                          });
+
+                          _applyFilters();
+                          Navigator.pop(context);
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade700,
                     foregroundColor: Colors.white,
@@ -481,10 +487,8 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 ),
               ],
             );
-          }
-        );
-      }
-    );
+          });
+        });
   }
 
   @override
@@ -526,25 +530,31 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                                   style: const TextStyle(color: Colors.red),
                                 ),
                               )
-                            : _epitopeResults.isEmpty && _allProcessedRows.isNotEmpty
+                            : _epitopeResults.isEmpty &&
+                                    _allProcessedRows.isNotEmpty
                                 ? Center(
                                     child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
-                                        const Text('No epitopes match the current filter parameters.', style: TextStyle(fontSize: 16)),
+                                        const Text(
+                                            'No epitopes match the current filter parameters.',
+                                            style: TextStyle(fontSize: 16)),
                                         const SizedBox(height: 12),
                                         ElevatedButton(
                                           onPressed: _showParameterDialog,
-                                          child: const Text("Adjust Parameters"),
+                                          child:
+                                              const Text("Adjust Parameters"),
                                         )
                                       ],
                                     ),
                                   )
                                 : _epitopeResults.isEmpty
-                                  ? const Center(
-                                      child: Text('Enter antibodies to view matrix.'),
-                                    )
-                                  : _buildMatrixContent(),
+                                    ? const Center(
+                                        child: Text(
+                                            'Enter antibodies to view matrix.'),
+                                      )
+                                    : _buildMatrixContent(),
                   ),
                   _buildFooter(),
                 ],
@@ -672,59 +682,78 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   }
 
   Widget _buildLegend() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.info_outline,
-                        size: 16, color: Colors.blueGrey.shade400),
-                    const SizedBox(width: 8),
-                    const Text(
-                      "Matrix Legend",
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.blueGrey),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 24,
-                  runSpacing: 12,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _legendItem(Colors.green.shade600, "Positive Match"),
-                    _legendItem(Colors.red.shade600, "Missing Required"),
-                    _legendItem(Colors.pink.shade100, "Self/DSA Highlight"),
-                    _legendIcon("(T)", "Theoretical", Colors.blue.shade900),
-                    _legendIcon("S", "Self HLA", Colors.blue.shade900),
-                    _legendIcon("D", "DSA", Colors.orange.shade900),
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 16, color: Colors.blueGrey.shade400),
+                        const SizedBox(width: 8),
+                        const Text(
+                          "Matrix Legend",
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.blueGrey),
+                        ),
+                        const Spacer(),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.tune, size: 14),
+                          label: const Text('Parameters',
+                              style: TextStyle(fontSize: 12)),
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                          ),
+                          onPressed: _showParameterDialog,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 24,
+                      runSpacing: 12,
+                      children: [
+                        _legendItem(Colors.green.shade600, "Positive Match"),
+                        _legendItem(Colors.red.shade600, "Missing Required"),
+                        _legendItem(Colors.pink.shade100, "Self/DSA Highlight"),
+                        _legendIcon("(T)", "Theoretical", Colors.blue.shade900),
+                        _legendIcon("S", "Self HLA", Colors.blue.shade900),
+                        _legendIcon("D", "DSA", Colors.orange.shade900),
+                      ],
+                    ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-          _buildZoomControl(),
-        ],
+            const SizedBox(width: 12),
+            _buildZoomControl(),
+          ],
+        ),
       ),
     );
   }
@@ -768,37 +797,30 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
   Widget _buildZoomControl() {
     return Container(
-      padding: const EdgeInsets.only(left: 20),
+      padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(left: BorderSide(color: Colors.grey.shade200)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              OutlinedButton.icon(
-                icon: const Icon(Icons.tune, size: 14),
-                label: const Text('Parameters', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                ),
-                onPressed: _showParameterDialog,
-              ),
-              const SizedBox(width: 16),
-              Text(
-                "Matrix Zoom: ${(_zoomLevel.value * 100).round()}%",
-                style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600),
-              ),
-            ],
+          Text(
+            "Matrix Zoom: ${(_zoomLevel.value * 100).round()}%",
+            style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 11,
+                fontWeight: FontWeight.w600),
           ),
+          const SizedBox(height: 8),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1067,9 +1089,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             if (isHeader && sortKey != null)
               Icon(
                 isSorted
-                    ? (!_sortAscending 
-                        ? Icons.arrow_upward 
-                        : Icons.arrow_downward) 
+                    ? (!_sortAscending
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward)
                     : Icons.sort,
                 size: 12,
                 color: isSorted ? Colors.blue : Colors.grey,
