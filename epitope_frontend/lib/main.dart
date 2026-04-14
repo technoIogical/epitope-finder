@@ -64,12 +64,18 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   final ScrollController _verticalScrollController = ScrollController();
   final ScrollController _stickyVerticalScrollController = ScrollController();
 
+  // NEW: Store raw data separately so we can filter without re-fetching
+  List<Map<String, dynamic>> _allProcessedRows = [];
   List<Map<String, dynamic>> _epitopeResults = [];
   List<String> _sortedColumns = [];
   Set<String> _userAllelesSet = {};
 
   Set<String> _recipientHlaSet = {};
   Set<String> _donorHlaSet = {};
+
+  // NEW: Dynamic Parameter Thresholds
+  int _minPositiveThreshold = 0;
+  int _maxNegativeThreshold = 10;
 
   bool _isLoading = false;
   String _errorMessage = '';
@@ -87,7 +93,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
   double get currentFontSize => 12.0 * _zoomLevel.value;
 
   String? _sortColumn;
-  bool _sortAscending = false; // Start initialized as descending
+  bool _sortAscending = false;
 
   void _updateZoom(double change) {
     _zoomLevel.value = (_zoomLevel.value + change).clamp(0.5, 3.0);
@@ -182,6 +188,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
+      _allProcessedRows = [];
       _epitopeResults = [];
       _sortedColumns = [];
       _recipientHlaSet = _selectedRecipientHla.toSet();
@@ -236,10 +243,7 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                 .map((e) => e.toString())
                 .toList();
 
-        List<String> positiveCols = List.from(expandedAntibodies)..sort();
         _userAllelesSet = expandedAntibodies.toSet();
-
-        // Update the Sets used by the painter with expanded alleles
         _recipientHlaSet = {
           ..._selectedRecipientHla,
           ...expandedRecipient,
@@ -249,7 +253,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           ...expandedDonor,
         };
 
-        Set<String> negativeColSet = {};
         List<Map<String, dynamic>> processedRows = [];
 
         for (var rawRow in rawRows) {
@@ -258,13 +261,6 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
 
           int posCount = row['Number of Positive Matches'] ?? 0;
           int negCount = row['Number of Missing Required Alleles'] ?? 0;
-
-          // --- NEW: Data Filtering Logic ---
-          // 1. Filter out if 10 or more negative alleles
-          // 2. Filter out if more negative alleles than positive alleles
-          if (negCount >= 10 || negCount > posCount) {
-            continue; // Skip this epitope completely
-          }
 
           final List<String> positiveMatches =
               (row['Positive Matches'] as List? ?? [])
@@ -275,17 +271,12 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                   .map((e) => e.toString())
                   .toList();
 
-          // Only add negative columns for rows that passed the filter
-          negativeColSet.addAll(missingRequired);
-
           bool hasS = row['cached_hasS'] == true;
           bool hasD = row['cached_hasD'] == true;
           bool isTheoretical = row['Theoretical'] == true;
 
-          // --- THE NEW MATH LOGIC (Pos - Neg) ---
           double matchRatio = posCount.toDouble() - negCount.toDouble();
 
-          // Massive penalty for Self-Antibody to force it to the bottom
           if (hasS) {
             matchRatio -= 1000.0;
           }
@@ -304,25 +295,13 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
           });
         }
 
-        // Apply Intelligent Sort on Initial Load
-        processedRows.sort((a, b) {
-          int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
-          if (ratioCmp != 0) return ratioCmp;
+        // Store EVERYTHING from the backend into the master list
+        _allProcessedRows = processedRows;
 
-          // Tie-breaker
-          int posA = a['Number of Positive Matches'] ?? 0;
-          int posB = b['Number of Positive Matches'] ?? 0;
-          return posB.compareTo(posA);
-        });
+        // Apply filters & build the actual matrix view
+        _applyFilters();
+        _sortColumn = null; // Reset sort
 
-        negativeColSet.removeAll(_userAllelesSet);
-        List<String> negativeCols = negativeColSet.toList()..sort();
-
-        setState(() {
-          _epitopeResults = processedRows;
-          _sortedColumns = [...positiveCols, ...negativeCols];
-          _sortColumn = null;
-        });
       } else {
         setState(() {
           _errorMessage = 'Server Error: ${response.statusCode}';
@@ -339,48 +318,173 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     }
   }
 
+  // NEW: Client-side dynamic filter logic
+  void _applyFilters() {
+    List<Map<String, dynamic>> filteredRows = [];
+    Set<String> negativeColSet = {};
+
+    for (var row in _allProcessedRows) {
+      int posCount = row['Number of Positive Matches'];
+      int negCount = row['Number of Missing Required Alleles'];
+
+      if (posCount >= _minPositiveThreshold && negCount <= _maxNegativeThreshold) {
+        filteredRows.add(row);
+        negativeColSet.addAll(row['cached_missingRequiredSet'] as Set<String>);
+      }
+    }
+
+    negativeColSet.removeAll(_userAllelesSet);
+    List<String> negativeCols = negativeColSet.toList()..sort();
+    List<String> positiveCols = _userAllelesSet.toList()..sort();
+
+    setState(() {
+      _epitopeResults = filteredRows;
+      _sortedColumns = [...positiveCols, ...negativeCols];
+    });
+
+    _applySorting(); // Sorts the new filtered view
+  }
+
+  void _applySorting() {
+    if (_sortColumn == null) {
+      _epitopeResults.sort((a, b) {
+        int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
+        if (ratioCmp != 0) return ratioCmp;
+        int posA = a['Number of Positive Matches'] ?? 0;
+        int posB = b['Number of Positive Matches'] ?? 0;
+        return posB.compareTo(posA);
+      });
+    } else {
+      _epitopeResults.sort((a, b) {
+        dynamic valA = a[_sortColumn];
+        dynamic valB = b[_sortColumn];
+        int cmp;
+        if (valA is num && valB is num) {
+          cmp = valA.compareTo(valB);
+        } else {
+          cmp = valA.toString().compareTo(valB.toString());
+        }
+        return _sortAscending ? cmp : -cmp;
+      });
+    }
+  }
+
   void _sortResults(String column) {
     setState(() {
       if (_sortColumn == column) {
         if (!_sortAscending) {
-          // 2nd Click: It was descending, switch to ascending
           _sortAscending = true;
         } else {
-          // 3rd Click: It was ascending, reset to intelligent sort
           _sortColumn = null;
         }
       } else {
-        // 1st Click: Start with descending (big numbers on top)
         _sortColumn = column;
         _sortAscending = false;
       }
-
-      if (_sortColumn == null) {
-        // Reset to Intelligent Sort
-        _epitopeResults.sort((a, b) {
-          int ratioCmp = b['matchRatio'].compareTo(a['matchRatio']);
-          if (ratioCmp != 0) return ratioCmp;
-
-          int posA = a['Number of Positive Matches'] ?? 0;
-          int posB = b['Number of Positive Matches'] ?? 0;
-          return posB.compareTo(posA);
-        });
-      } else {
-        // Apply Manual Column Sort
-        _epitopeResults.sort((a, b) {
-          dynamic valA = a[_sortColumn];
-          dynamic valB = b[_sortColumn];
-          int cmp;
-          if (valA is num && valB is num) {
-            cmp = valA.compareTo(valB);
-          } else {
-            cmp = valA.toString().compareTo(valB.toString());
-          }
-          // _sortAscending = false means Descending (-cmp handles large to small)
-          return _sortAscending ? cmp : -cmp;
-        });
-      }
+      _applySorting();
     });
+  }
+
+  // NEW: Parameter Dialog for dynamic filtering
+  Future<void> _showParameterDialog() async {
+    TextEditingController posCtrl = TextEditingController(text: _minPositiveThreshold.toString());
+    TextEditingController negCtrl = TextEditingController(text: _maxNegativeThreshold.toString());
+    String? errorMsg;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.tune, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text('Matrix Parameters'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Filter which epitopes are displayed:", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: posCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Min Positive Alleles',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: negCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: 'Max Negative Alleles',
+                      errorText: errorMsg,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (val) {
+                      if (val.isNotEmpty) {
+                        int? parsed = int.tryParse(val);
+                        if (parsed != null && parsed > 10) {
+                          setDialogState(() => errorMsg = 'Over negative limit (Max 10)');
+                        } else {
+                          setDialogState(() => errorMsg = null);
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      posCtrl.text = '0';
+                      negCtrl.text = '10';
+                      errorMsg = null;
+                    });
+                  },
+                  child: const Text('Reset', style: TextStyle(color: Colors.grey)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: errorMsg != null ? null : () {
+                    int newPos = int.tryParse(posCtrl.text) ?? 0;
+                    int newNeg = int.tryParse(negCtrl.text) ?? 10;
+                    if (newNeg > 10) newNeg = 10; // Safety cap
+                    
+                    setState(() {
+                      _minPositiveThreshold = newPos;
+                      _maxNegativeThreshold = newNeg;
+                    });
+                    
+                    _applyFilters();
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
   }
 
   @override
@@ -422,12 +526,25 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
                                   style: const TextStyle(color: Colors.red),
                                 ),
                               )
-                            : _epitopeResults.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                        'Enter antibodies to view matrix.'),
+                            : _epitopeResults.isEmpty && _allProcessedRows.isNotEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Text('No epitopes match the current filter parameters.', style: TextStyle(fontSize: 16)),
+                                        const SizedBox(height: 12),
+                                        ElevatedButton(
+                                          onPressed: _showParameterDialog,
+                                          child: const Text("Adjust Parameters"),
+                                        )
+                                      ],
+                                    ),
                                   )
-                                : _buildMatrixContent(),
+                                : _epitopeResults.isEmpty
+                                  ? const Center(
+                                      child: Text('Enter antibodies to view matrix.'),
+                                    )
+                                  : _buildMatrixContent(),
                   ),
                   _buildFooter(),
                 ],
@@ -653,18 +770,34 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
     return Container(
       padding: const EdgeInsets.only(left: 20),
       decoration: BoxDecoration(
-        color: Colors.white, // Explicitly enforce pure white background
+        color: Colors.white,
         border: Border(left: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(
-            "Matrix Zoom: ${(_zoomLevel.value * 100).round()}%",
-            style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 11,
-                fontWeight: FontWeight.w600),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.tune, size: 14),
+                label: const Text('Parameters', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                ),
+                onPressed: _showParameterDialog,
+              ),
+              const SizedBox(width: 16),
+              Text(
+                "Matrix Zoom: ${(_zoomLevel.value * 100).round()}%",
+                style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -934,11 +1067,9 @@ class _EpitopeMatrixPageState extends State<EpitopeMatrixPage> {
             if (isHeader && sortKey != null)
               Icon(
                 isSorted
-                    ? (!_sortAscending // Re-mapped UI Arrows to match user request
-                        ? Icons
-                            .arrow_upward // Arrow Up: Big numbers on top (Descending)
-                        : Icons
-                            .arrow_downward) // Arrow Down: Small numbers on top (Ascending)
+                    ? (!_sortAscending 
+                        ? Icons.arrow_upward 
+                        : Icons.arrow_downward) 
                     : Icons.sort,
                 size: 12,
                 color: isSorted ? Colors.blue : Colors.grey,
