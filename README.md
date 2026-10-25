@@ -1,1 +1,1 @@
-Project currently located at: epitopefinder.dpdns.org
+Project currently located at: [epitopefinder.dpdns.org](url)
